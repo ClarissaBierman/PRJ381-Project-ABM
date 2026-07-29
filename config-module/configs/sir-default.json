@@ -1,0 +1,13 @@
+{
+  "ScenarioName": "SIR Default",
+  "GridWidth": 50,
+  "GridHeight": 50,
+  "Topology": "Bounded",
+  "AgentCount": 200,
+  "InitialInfected": 5,
+  "InfectionProbability": 0.3,
+  "RecoveryTicks": 10,
+  "TickLimit": 500,
+  "RandomSeed": null,
+  "Scheduler": "Random"
+}

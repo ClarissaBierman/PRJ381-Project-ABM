@@ -1,0 +1,13 @@
+{
+  "ScenarioName": "SIR High Spread",
+  "GridWidth": 50,
+  "GridHeight": 50,
+  "Topology": "Toroidal",
+  "AgentCount": 300,
+  "InitialInfected": 15,
+  "InfectionProbability": 0.75,
+  "RecoveryTicks": 14,
+  "TickLimit": 300,
+  "RandomSeed": 7,
+  "Scheduler": "Random"
+}

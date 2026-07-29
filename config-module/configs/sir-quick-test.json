@@ -1,0 +1,13 @@
+{
+  "ScenarioName": "SIR Quick Test",
+  "GridWidth": 10,
+  "GridHeight": 10,
+  "Topology": "Bounded",
+  "AgentCount": 20,
+  "InitialInfected": 2,
+  "InfectionProbability": 0.5,
+  "RecoveryTicks": 4,
+  "TickLimit": 50,
+  "RandomSeed": 42,
+  "Scheduler": "Random"
+}
