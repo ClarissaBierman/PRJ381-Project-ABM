@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ABM Framework Dashboard - Simulation</title>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; margin: 20px; }
+      #charts { max-width: 900px; }
+      canvas { width: 100% !important; height: 400px !important; }
+    </style>
+  </head>
+  <body>
+    <h1>ABM Framework Dashboard - Live SIR</h1>
+    <div id="charts">
+      <canvas id="sirChart"></canvas>
+    </div>
+
+    <!-- Chart.js from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Microsoft SignalR JS client from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
+
+    <script>
+      const maxPoints = 100;
+
+      const ctx = document.getElementById('sirChart').getContext('2d');
+
+      const data = {
+        labels: [],
+        datasets: [
+          {
+            label: 'Susceptible',
+            borderColor: 'rgba(54,162,235,1)',
+            backgroundColor: 'rgba(54,162,235,0.1)',
+            data: [],
+            tension: 0.2
+          },
+          {
+            label: 'Infected',
+            borderColor: 'rgba(255,99,132,1)',
+            backgroundColor: 'rgba(255,99,132,0.1)',
+            data: [],
+            tension: 0.2
+          },
+          {
+            label: 'Recovered',
+            borderColor: 'rgba(75,192,192,1)',
+            backgroundColor: 'rgba(75,192,192,0.1)',
+            data: [],
+            tension: 0.2
+          }
+        ]
+      };
+
+      const config = {
+        type: 'line',
+        data: data,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: { display: true, title: { display: true, text: 'Tick' } },
+            y: { display: true, title: { display: true, text: 'Count' } }
+          }
+        }
+      };
+
+      const sirChart = new Chart(ctx, config);
+
+      // Connect to SignalR hub
+      const connection = new signalR.HubConnectionBuilder()
+        .withUrl('/simulationHub')
+        .withAutomaticReconnect()
+        .build();
+
+      connection.on('ReceiveTick', (tick) => {
+        // tick: { Tick, Susceptible, Infected, Recovered }
+        data.labels.push(tick.Tick);
+        data.datasets[0].data.push(tick.Susceptible);
+        data.datasets[1].data.push(tick.Infected);
+        data.datasets[2].data.push(tick.Recovered);
+
+        // trim to maxPoints
+        if (data.labels.length > maxPoints) {
+          data.labels.shift();
+          data.datasets.forEach(ds => ds.data.shift());
+        }
+
+        sirChart.update('none');
+      });
+
+      connection.start().catch(err => console.error(err.toString()));
+    </script>
+  </body>
+</html>
