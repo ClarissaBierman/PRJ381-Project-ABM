@@ -266,4 +266,3 @@ public sealed class SimulationEngine : ISimulationEngine
         _pauseTokenSource = null;
     }
 }
-}

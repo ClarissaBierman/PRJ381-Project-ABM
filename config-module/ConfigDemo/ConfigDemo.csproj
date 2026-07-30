@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AbmFramework.Config\AbmFramework.Config.csproj" />
+    <ProjectReference Include="..\AbmFramework.Engine\AbmFramework.Engine.csproj" />
   </ItemGroup>
 
 </Project>
