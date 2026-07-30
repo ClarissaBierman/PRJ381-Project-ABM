@@ -1,5 +1,9 @@
 using AbmFramework.Config;
 using AbmFramework.Engine;
+using ABM.Persistence;
+using ABM.Persistence.Export;
+using ABM.Persistence.Models;
+using System.Text.Json;
 
 var options = ParseArgs(args);
 
@@ -34,11 +38,49 @@ catch (Exception ex) when (ex is FileNotFoundException or NotSupportedException)
 
 PrintSummary(config);
 
-ISimulationEngine engine = new SimulationEngine();
+var dbPath = Path.Combine(AppContext.BaseDirectory, "simulations.db");
+var repository = new SimulationRepository(dbPath);
 
-engine.TickCompleted += (sender, stats) =>
+var simulationId = Guid.NewGuid();
+var startedAt = DateTime.UtcNow;
+
+var simulation = new Simulation
+{
+    Id = simulationId,
+    StartedAt = startedAt,
+    EndedAt = null,
+    ScenarioName = config.ScenarioName,
+    ConfigurationJson = JsonSerializer.Serialize(config)
+};
+await repository.SaveSimulationAsync(simulation);
+
+SimulationEngine engine = new SimulationEngine();
+
+engine.TickCompleted += async (sender, stats) =>
 {
     Console.WriteLine($"Tick {stats.Tick} | S={stats.Susceptible} I={stats.Infected} R={stats.Recovered}");
+
+    var tickRecord = new TickRecord
+    {
+        SimulationId = simulationId,
+        TickNumber = stats.Tick,
+        Susceptible = stats.Susceptible,
+        Infected = stats.Infected,
+        Recovered = stats.Recovered
+    };
+    await repository.SaveTickRecordAsync(tickRecord);
+
+    var snapshot = engine.GetSnapshot();
+    var agentStates = snapshot.Agents.Select(a => new AgentState
+    {
+        SimulationId = simulationId,
+        TickNumber = stats.Tick,
+        AgentId = a.Id,
+        X = a.Position.X,
+        Y = a.Position.Y,
+        HealthState = a.State.ToString()
+    }).ToArray();
+    await repository.SaveAgentStatesAsync(agentStates);
 };
 
 engine.SimulationCompleted += (sender, e) =>
@@ -48,6 +90,12 @@ engine.SimulationCompleted += (sender, e) =>
 };
 
 await engine.StartAsync(config);
+
+// Export the full tick history to CSV for external analysis
+var ticks = await repository.GetTicksAsync(simulationId);
+var csvPath = Path.Combine(AppContext.BaseDirectory, $"simulation-{simulationId}.csv");
+await CsvExporter.ExportTicksAsync(ticks, csvPath);
+Console.WriteLine($"Results exported to: {csvPath}");
 
 return 0;
 

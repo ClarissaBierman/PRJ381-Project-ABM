@@ -23,11 +23,12 @@ public class LiveSimulationService : BackgroundService
             GridWidth = 20,
             GridHeight = 20,
             Topology = GridTopology.Bounded,
-            AgentCount = 150,
+            AgentCount = 200,
             InitialInfected = 5,
-            InfectionProbability = 0.4,
+            InfectionProbability = 0.02,
+
             RecoveryTicks = 50,
-            TickLimit = 201,
+            TickLimit = 500,
             Scheduler = SchedulerKind.Random
         };
 

@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AbmFramework.Config\AbmFramework.Config.csproj" />
     <ProjectReference Include="..\AbmFramework.Engine\AbmFramework.Engine.csproj" />
+	<ProjectReference Include="..\..\ABM.Persistence\ABM.Persistence.csproj" />
   </ItemGroup>
 
 </Project>
