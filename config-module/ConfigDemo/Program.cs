@@ -1,4 +1,5 @@
 using AbmFramework.Config;
+using AbmFramework.Engine;
 
 var options = ParseArgs(args);
 
@@ -33,7 +34,19 @@ catch (Exception ex) when (ex is FileNotFoundException or NotSupportedException)
 
 PrintSummary(config);
 
-ISimulationEngine engine = new StubSimulationEngine();
+ISimulationEngine engine = new SimulationEngine();
+
+engine.TickCompleted += (sender, stats) =>
+{
+    Console.WriteLine($"Tick {stats.Tick} | S={stats.Susceptible} I={stats.Infected} R={stats.Recovered}");
+};
+
+engine.SimulationCompleted += (sender, e) =>
+{
+    Console.WriteLine();
+    Console.WriteLine("Simulation completed.");
+};
+
 await engine.StartAsync(config);
 
 return 0;
@@ -86,17 +99,3 @@ internal sealed class ParsedArgs
     public int? Agents { get; set; }
 }
 
-internal interface ISimulationEngine
-{
-    Task StartAsync(SimulationConfig config);
-}
-
-internal sealed class StubSimulationEngine : ISimulationEngine
-{
-    public Task StartAsync(SimulationConfig config)
-    {
-        Console.WriteLine("[stub engine] Config accepted. Real engine will initialise the grid,");
-        Console.WriteLine("[stub engine] place agents, and begin the tick loop from here.");
-        return Task.CompletedTask;
-    }
-}
