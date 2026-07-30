@@ -2,7 +2,7 @@
   "profiles": {
     "ConfigDemo": {
       "commandName": "Project",
-      "commandLineArgs": "--config \"C:\\Users\\USER-PC\\Documents\\Laptop\\Laptop\\Belgium Year 3\\PRJ 381\\Project-ABM\\PRJ381-Project-ABM\\config-module\\configs\\sir-default.json\""
+      "commandLineArgs": "--config \"C:\\Users\\User\\OneDrive - belgiumcampus.ac.za\\Documents\\Belgium\\Third Year 2026\\PRJ381\\PRJ381-Project-ABM\\config-module\\configs\\sir-default.json\""
     }
   }
 }

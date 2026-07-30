@@ -9,6 +9,11 @@
   <ItemGroup>
     <ProjectReference Include="..\ABM.Persistence\ABM.Persistence.csproj" />
     <ProjectReference Include="..\config-module\AbmFramework.Engine\AbmFramework.Engine.csproj" />
+	<ProjectReference Include="..\config-module\AbmFramework.Config\AbmFramework.Config.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Controllers\" />
   </ItemGroup>
 
 </Project>

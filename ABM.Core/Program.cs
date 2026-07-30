@@ -5,7 +5,7 @@ var rng = new Random(42);
 var agents = new List<SIRAgent>();
 for (int i = 0; i < 10; i++)
 {
-    agents.Add(new SIRAgent(i, (i, 0), infectionProbability: 0.05, recoveryTime: 5));
+    agents.Add(new SIRAgent(i, (i, 0), infectionProbability: 0.4, recoveryTime: 50));
 }
 agents[0].Infect(); // patient zero
 

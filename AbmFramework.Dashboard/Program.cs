@@ -7,7 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Register SignalR and the fake simulation background service
 builder.Services.AddSignalR();
 builder.Services.AddControllers();
-builder.Services.AddHostedService<FakeSimulationService>();
+builder.Services.AddHostedService<LiveSimulationService>();
 
 
 var app = builder.Build();
