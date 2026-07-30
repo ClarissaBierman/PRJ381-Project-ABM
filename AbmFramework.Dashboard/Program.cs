@@ -6,7 +6,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Register SignalR and the fake simulation background service
 builder.Services.AddSignalR();
+builder.Services.AddControllers();
 builder.Services.AddHostedService<FakeSimulationService>();
+
 
 var app = builder.Build();
 
@@ -16,5 +18,6 @@ app.UseStaticFiles();
 
 // Map the SignalR hub
 app.MapHub<SimulationHub>("/simulationHub");
+app.MapControllers();
 
 app.Run();
