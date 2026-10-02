@@ -1,0 +1,16 @@
+{
+  "ScenarioName": "Boids Default",
+  "Model": "Boids",
+  "GridWidth": 40,
+  "GridHeight": 40,
+  "Topology": "Toroidal",
+  "AgentCount": 100,
+  "PerceptionRadius": 3.0,
+  "SeparationWeight": 1.5,
+  "AlignmentWeight": 1.0,
+  "CohesionWeight": 1.0,
+  "MaxSpeed": 1.5,
+  "TickLimit": 500,
+  "RandomSeed": null,
+  "Scheduler": "Random"
+}

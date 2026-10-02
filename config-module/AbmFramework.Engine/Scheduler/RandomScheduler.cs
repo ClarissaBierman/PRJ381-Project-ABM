@@ -5,8 +5,8 @@ namespace AbmFramework.Engine.Scheduler;
 public sealed class RandomScheduler : IScheduler
 {
     //Returns the agents in a randomly shuffled order.
-    public IEnumerable<SIRAgent> OrderAgents(
-        IReadOnlyList<SIRAgent> agents,
+    public IEnumerable<Agent> OrderAgents(
+        IReadOnlyList<Agent> agents,
         Random random)
     {
         //Copy the list so the original order is preserved.

@@ -1,0 +1,16 @@
+{
+  "ScenarioName": "Ant Foraging Default",
+  "Model": "AntForaging",
+  "GridWidth": 40,
+  "GridHeight": 40,
+  "Topology": "Bounded",
+  "AgentCount": 50,
+  "FoodSources": 3,
+  "FoodPerSource": 100,
+  "PheromoneDepositAmount": 5.0,
+  "PheromoneDecayRate": 0.02,
+  "ExplorationChance": 0.1,
+  "TickLimit": 1000,
+  "RandomSeed": null,
+  "Scheduler": "Random"
+}

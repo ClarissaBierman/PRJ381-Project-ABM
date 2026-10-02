@@ -148,6 +148,69 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void LoadFromJson_ModelDefaultsToSIR_WhenNotSpecified()
+    {
+        const string json = """{ "AgentCount": 50 }""";
+
+        var config = ConfigLoader.LoadFromJson(json);
+
+        Assert.Equal(ModelType.SIR, config.Model);
+    }
+
+    [Theory]
+    [InlineData("Schelling")]
+    [InlineData("Boids")]
+    [InlineData("AntForaging")]
+    public void LoadFromJson_EachModelType_Parses(string modelName)
+    {
+        var json = $$"""{ "Model": "{{modelName}}", "AgentCount": 50 }""";
+
+        var config = ConfigLoader.LoadFromJson(json);
+
+        Assert.Equal(modelName, config.Model.ToString());
+    }
+
+    [Fact]
+    public void Validate_SchellingInvalidSimilarityThreshold_Throws()
+    {
+        var config = new SimulationConfig { Model = ModelType.Schelling, SimilarityThreshold = 1.5 };
+
+        var ex = Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(config));
+        Assert.Contains(ex.Errors, e => e.Contains("SimilarityThreshold"));
+    }
+
+    [Fact]
+    public void Validate_BoidsNonPositiveMaxSpeed_Throws()
+    {
+        var config = new SimulationConfig { Model = ModelType.Boids, MaxSpeed = 0 };
+
+        var ex = Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(config));
+        Assert.Contains(ex.Errors, e => e.Contains("MaxSpeed"));
+    }
+
+    [Fact]
+    public void Validate_AntForagingInvalidDecayRate_Throws()
+    {
+        var config = new SimulationConfig { Model = ModelType.AntForaging, PheromoneDecayRate = 2.0 };
+
+        var ex = Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(config));
+        Assert.Contains(ex.Errors, e => e.Contains("PheromoneDecayRate"));
+    }
+
+    [Fact]
+    public void Validate_DefaultConfigForEveryModel_IsValid()
+    {
+        foreach (var model in Enum.GetValues<ModelType>())
+        {
+            var config = new SimulationConfig { Model = model };
+
+            var exception = Record.Exception(() => ConfigLoader.Validate(config));
+
+            Assert.Null(exception);
+        }
+    }
+
+    [Fact]
     public void LoadFromFile_UnsupportedExtension_ThrowsNotSupportedException()
     {
         var tempPath = Path.GetTempFileName();

@@ -12,7 +12,7 @@ public sealed class SimulationSnapshot
     public required Grid2D Grid { get; init; }
 
     //All agents currently participating in the simulation.
-    public required IReadOnlyList<SIRAgent> Agents { get; init; }
+    public required IReadOnlyList<Agent> Agents { get; init; }
 
     //Latest simulation statistics.
     public required TickStatistics Statistics { get; init; }

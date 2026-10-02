@@ -5,8 +5,8 @@ namespace AbmFramework.Engine.Scheduler;
 public sealed class SequentialScheduler : IScheduler
 {
     //Returns the agents in their existing order.
-    public IEnumerable<SIRAgent> OrderAgents(
-        IReadOnlyList<SIRAgent> agents,
+    public IEnumerable<Agent> OrderAgents(
+        IReadOnlyList<Agent> agents,
         Random random)
     {
         return agents;

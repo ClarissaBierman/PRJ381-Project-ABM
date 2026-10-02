@@ -1,0 +1,13 @@
+{
+  "ScenarioName": "Schelling Default",
+  "Model": "Schelling",
+  "GridWidth": 30,
+  "GridHeight": 30,
+  "Topology": "Bounded",
+  "AgentCount": 600,
+  "SimilarityThreshold": 0.5,
+  "GroupARatio": 0.5,
+  "TickLimit": 200,
+  "RandomSeed": null,
+  "Scheduler": "Random"
+}

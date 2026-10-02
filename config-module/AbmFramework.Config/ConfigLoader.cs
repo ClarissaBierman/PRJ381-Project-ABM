@@ -115,6 +115,39 @@ public static class ConfigLoader
         if (string.IsNullOrWhiteSpace(config.ScenarioName))
             errors.Add("ScenarioName cannot be empty.");
 
+        if (config.Model == ModelType.Schelling)
+        {
+            if (config.SimilarityThreshold is < 0.0 or > 1.0)
+                errors.Add($"SimilarityThreshold must be between 0.0 and 1.0 (got {config.SimilarityThreshold}).");
+
+            if (config.GroupARatio is < 0.0 or > 1.0)
+                errors.Add($"GroupARatio must be between 0.0 and 1.0 (got {config.GroupARatio}).");
+        }
+
+        if (config.Model == ModelType.Boids)
+        {
+            if (config.PerceptionRadius <= 0)
+                errors.Add($"PerceptionRadius must be positive (got {config.PerceptionRadius}).");
+
+            if (config.MaxSpeed <= 0)
+                errors.Add($"MaxSpeed must be positive (got {config.MaxSpeed}).");
+        }
+
+        if (config.Model == ModelType.AntForaging)
+        {
+            if (config.FoodSources <= 0)
+                errors.Add($"FoodSources must be positive (got {config.FoodSources}).");
+
+            if (config.FoodPerSource <= 0)
+                errors.Add($"FoodPerSource must be positive (got {config.FoodPerSource}).");
+
+            if (config.PheromoneDecayRate is < 0.0 or > 1.0)
+                errors.Add($"PheromoneDecayRate must be between 0.0 and 1.0 (got {config.PheromoneDecayRate}).");
+
+            if (config.ExplorationChance is < 0.0 or > 1.0)
+                errors.Add($"ExplorationChance must be between 0.0 and 1.0 (got {config.ExplorationChance}).");
+        }
+
         if (errors.Count > 0)
         {
             throw new ConfigValidationException(errors);

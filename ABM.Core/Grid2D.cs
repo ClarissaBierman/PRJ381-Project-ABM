@@ -1,4 +1,4 @@
-﻿namespace ABM.Core
+namespace ABM.Core
 {
     public enum GridTopology { Toroidal, Bounded }
 
@@ -30,6 +30,11 @@
             return patch;
         }
 
+        // Returns every patch that has been accessed so far. Used by models
+        // that need to iterate the whole environment, such as decaying
+        // pheromone trails each tick for Ant Foraging.
+        public IEnumerable<Patch> AllPatches() => patches.Values;
+
         public void SetPatchProperty(int x, int y, string key, object value)
         {
             GetPatch(x, y).SetProperty(key, value);
@@ -38,7 +43,7 @@
         public void Place(Agent agent)
         {
             var key = ResolvePosition(agent.Position);
-            if (key == null) return; 
+            if (key == null) return;
 
             if (!occupants.TryGetValue(key.Value, out var list))
             {
@@ -65,6 +70,22 @@
             return occupants.TryGetValue(key.Value, out var list) ? list : new List<Agent>();
         }
 
+        // Returns every grid cell currently holding zero agents, scanning the
+        // full Width x Height range. Used by models (e.g. Schelling) where an
+        // unhappy agent needs to relocate to any free cell.
+        public (int X, int Y)? FindRandomEmptyPosition(Random random, int maxAttempts = 200)
+        {
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                var candidate = (X: random.Next(Width), Y: random.Next(Height));
+                if (GetAgentsAt(candidate.X, candidate.Y).Count == 0)
+                {
+                    return candidate;
+                }
+            }
+            return null;
+        }
+
         public List<Agent> GetNeighbours(Agent agent, bool moore = true)
         {
             var (x, y) = agent.Position;
@@ -89,7 +110,7 @@
             foreach (var (dx, dy) in offsets)
             {
                 var neighbourKey = ResolvePosition((x + dx, y + dy));
-                if (neighbourKey == null) continue; 
+                if (neighbourKey == null) continue;
 
                 if (occupants.TryGetValue(neighbourKey.Value, out var list))
                 {
@@ -100,8 +121,8 @@
             return result;
         }
 
-        // Converts a raw (possibly out-of-range) position into a valid grid key,
-        private (int X, int Y)? ResolvePosition((int X, int Y) position)
+        // Converts a raw (possibly out-of-range) position into a valid grid key.
+        public (int X, int Y)? ResolvePosition((int X, int Y) position)
         {
             if (Topology == GridTopology.Toroidal)
             {
@@ -109,7 +130,7 @@
                 int wrappedY = ((position.Y % Height) + Height) % Height;
                 return (wrappedX, wrappedY);
             }
-            else 
+            else
             {
                 bool inBounds = position.X >= 0 && position.X < Width
                              && position.Y >= 0 && position.Y < Height;

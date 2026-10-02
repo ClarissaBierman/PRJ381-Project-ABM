@@ -1,14 +1,55 @@
-﻿const canvas = document.getElementById("grid");
+const canvas = document.getElementById("grid");
 const ctx = canvas.getContext("2d");
-const cellSize = 30;
-const gridWidth = 20;
-const gridHeight = 20;
+const legend = document.getElementById("legend");
 
-canvas.width = gridWidth * cellSize;
-canvas.height = gridHeight * cellSize;
+const targetSize = 480;
+let gridWidth = 20;
+let gridHeight = 20;
+let cellSize = targetSize / 20;
 
-function drawGrid() {
+const stateStyles = {
+    "Susceptible": { color: "#3366cc", label: "Susceptible" },
+    "Infected": { color: "#dc3545", label: "Infected" },
+    "Recovered": { color: "#28a745", label: "Recovered" },
+    "Group0-Happy": { color: "#3366cc", label: "Group A, happy" },
+    "Group0-Unhappy": { color: "#a9c1f5", label: "Group A, unhappy" },
+    "Group1-Happy": { color: "#dc3545", label: "Group B, happy" },
+    "Group1-Unhappy": { color: "#f5b5bc", label: "Group B, unhappy" },
+    "BoidAgent": { color: "#3366cc", label: "Boid" },
+    "Searching": { color: "#8d6e63", label: "Searching for food" },
+    "ReturningWithFood": { color: "#28a745", label: "Carrying food home" }
+};
+
+const fallbackPalette = ["#ffc107", "#9b59b6", "#17a2b8", "#e67e22", "#6c757d"];
+let fallbackIndex = 0;
+let seenStates = [];
+
+function styleFor(state) {
+    if (!(state in stateStyles)) {
+        stateStyles[state] = { color: fallbackPalette[fallbackIndex % fallbackPalette.length], label: state };
+        fallbackIndex++;
+    }
+    return stateStyles[state];
+}
+
+function setGridSize(width, height) {
+    gridWidth = width;
+    gridHeight = height;
+    cellSize = Math.floor(targetSize / Math.max(width, height));
+    canvas.width = gridWidth * cellSize;
+    canvas.height = gridHeight * cellSize;
+    clearGrid();
+}
+
+function clearGrid() {
+    seenStates = [];
+    legend.innerHTML = "";
+    drawGridLines();
+}
+
+function drawGridLines() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#d0d0d0";
 
     for (let y = 0; y < gridHeight; y++) {
         for (let x = 0; x < gridWidth; x++) {
@@ -18,20 +59,36 @@ function drawGrid() {
 }
 
 function drawAgents(agents) {
-    agents.forEach(a => {
-        if (a.state === "Susceptible") ctx.fillStyle = "blue";
-        if (a.state === "Infected") ctx.fillStyle = "red";
-        if (a.state === "Recovered") ctx.fillStyle = "green";
+    drawGridLines();
 
+    const radius = Math.max(2, cellSize * 0.3);
+    let legendChanged = false;
+
+    agents.forEach(a => {
+        const style = styleFor(a.state);
+        if (!seenStates.includes(a.state)) {
+            seenStates.push(a.state);
+            legendChanged = true;
+        }
+
+        ctx.fillStyle = style.color;
         ctx.beginPath();
-        ctx.arc(a.x * cellSize + cellSize / 2, a.y * cellSize + cellSize / 2, 8, 0, Math.PI * 2);
+        ctx.arc(a.x * cellSize + cellSize / 2, a.y * cellSize + cellSize / 2, radius, 0, Math.PI * 2);
         ctx.fill();
     });
+
+    if (legendChanged) {
+        renderLegend();
+    }
 }
 
-drawGrid();
+function renderLegend() {
+    legend.innerHTML = seenStates
+        .map(state => {
+            const style = styleFor(state);
+            return `<span class="legend-item"><span class="swatch" style="background:${style.color}"></span>${style.label}</span>`;
+        })
+        .join("");
+}
 
-connection.on("ReceiveGrid", (agents) => {
-    drawGrid();
-    drawAgents(agents);
-});
+setGridSize(gridWidth, gridHeight);

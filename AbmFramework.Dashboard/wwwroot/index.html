@@ -3,131 +3,448 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ABM Framework Dashboard - Simulation</title>
+    <title>ABM Framework Dashboard</title>
     <style>
         body {
             font-family: Arial, Helvetica, sans-serif;
-            margin: 20px;
+            margin: 0;
+            background: #f5f5f5;
+            color: #222;
         }
 
-        #charts {
+        header {
+            background: #1f2a44;
+            color: white;
+            padding: 16px 24px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 22px;
+        }
+
+        main {
+            padding: 20px 24px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .controls label {
+            font-weight: bold;
+        }
+
+        select, button {
+            font-size: 15px;
+            padding: 7px 12px;
+            border-radius: 6px;
+            border: 1px solid #b0b0b0;
+            background: white;
+        }
+
+        button {
+            cursor: pointer;
+            min-width: 80px;
+        }
+
+        button.primary {
+            background: #2e6be6;
+            border-color: #2e6be6;
+            color: white;
+        }
+
+        button:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
+
+        .speed {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 16px;
+        }
+
+        .speed-end {
+            font-size: 13px;
+            color: #777;
+        }
+
+        #speedSlider {
+            width: 160px;
+        }
+
+        #speedLabel {
+            font-size: 14px;
+            color: #555;
+            min-width: 90px;
+        }
+
+        .model-heading {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .model-heading h2 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .status {
+            font-size: 13px;
+            font-weight: bold;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: #e0e0e0;
+            color: #444;
+        }
+
+        .status.Running { background: #d4edda; color: #1e7b34; }
+        .status.Paused { background: #fff3cd; color: #8a6d00; }
+        .status.Completed { background: #d6e4ff; color: #1f4fa8; }
+        .status.Error { background: #f8d7da; color: #a52834; }
+
+        .tick {
+            font-size: 15px;
+            color: #555;
+        }
+
+        #modelDescription {
+            margin: 8px 0 20px;
+            color: #555;
             max-width: 900px;
         }
 
-        canvas {
-            width: 100% !important;
-            height: 400px !important;
+        .panels {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: flex-start;
         }
 
         .panel {
             background: white;
             border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            padding: 16px 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
         }
 
-        #gridPanel {
-            width: 650px;
+        .panel h3 {
+            margin: 0 0 12px;
+            font-size: 16px;
         }
 
         #grid {
-            border: 2px solid black;
+            display: block;
+            border: 1px solid #888;
             background: white;
+        }
+
+        #legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-top: 12px;
+            font-size: 13px;
+            max-width: 480px;
+        }
+
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .swatch {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .chart-panel {
+            flex: 1;
+            min-width: 420px;
+        }
+
+        .chart-wrap {
+            height: 420px;
         }
     </style>
 </head>
 <body>
+    <header>
+        <h1>ABM Framework Dashboard</h1>
+    </header>
 
-    <div class="panel" id="gridPanel">
+    <main>
+        <div class="controls">
+            <label for="modelSelect">Model:</label>
+            <select id="modelSelect"></select>
+            <button id="startButton" class="primary">Start</button>
+            <button id="pauseButton" disabled>Pause</button>
+            <button id="resetButton" disabled>Reset</button>
+            <div class="speed">
+                <label for="speedSlider">Speed:</label>
+                <span class="speed-end">Slow</span>
+                <input type="range" id="speedSlider" min="1" max="10" step="1" value="6" />
+                <span class="speed-end">Fast</span>
+                <span id="speedLabel"></span>
+            </div>
+        </div>
 
-        <h2>Grid Visualization</h2>
+        <div class="model-heading">
+            <h2 id="modelTitle">No simulation running</h2>
+            <span id="statusBadge" class="status">Stopped</span>
+            <span id="tickCounter" class="tick"></span>
+        </div>
+        <p id="modelDescription">Pick a model and press Start.</p>
 
-        <canvas id="grid"></canvas>
+        <div class="panels">
+            <div class="panel">
+                <h3>Grid</h3>
+                <canvas id="grid"></canvas>
+                <div id="legend"></div>
+            </div>
 
-    </div>
-
-
-    <h1>ABM Framework Dashboard - Live SIR</h1>
-    <div id="charts">
-        <canvas id="sirChart"></canvas>
-    </div>
+            <div class="panel chart-panel">
+                <h3 id="chartTitle">Statistics</h3>
+                <div class="chart-wrap">
+                    <canvas id="statsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </main>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
-
-    <script>
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl('/simulationHub')
-            .withAutomaticReconnect()
-            .build();
-
-        connection.start().catch(err => console.error(err.toString()));
-    </script>
-
     <script src="js/grid.js"></script>
 
     <script>
+        const modelSelect = document.getElementById("modelSelect");
+        const startButton = document.getElementById("startButton");
+        const pauseButton = document.getElementById("pauseButton");
+        const resetButton = document.getElementById("resetButton");
+        const modelTitle = document.getElementById("modelTitle");
+        const modelDescription = document.getElementById("modelDescription");
+        const statusBadge = document.getElementById("statusBadge");
+        const tickCounter = document.getElementById("tickCounter");
+        const chartTitle = document.getElementById("chartTitle");
+        const speedSlider = document.getElementById("speedSlider");
+        const speedLabel = document.getElementById("speedLabel");
+
+        const speedLevels = [1000, 500, 250, 150, 100, 50, 30, 20, 15, 10];
+        let speedTimer = null;
+
+        function showSpeed(delayMs) {
+            const ticksPerSecond = Math.round(1000 / delayMs);
+            speedLabel.textContent = `~${ticksPerSecond} tick${ticksPerSecond === 1 ? "" : "s"}/sec`;
+        }
+
+        function levelForDelay(delayMs) {
+            let best = 0;
+            speedLevels.forEach((d, i) => {
+                if (Math.abs(d - delayMs) < Math.abs(speedLevels[best] - delayMs)) best = i;
+            });
+            return best + 1;
+        }
+
+        let currentRun = null;
+        let currentStatus = "Stopped";
+
         const maxPoints = 500;
+        const seriesColors = [
+            "rgba(54,162,235,1)", "rgba(255,99,132,1)", "rgba(75,192,192,1)",
+            "rgba(255,193,7,1)", "rgba(155,89,182,1)", "rgba(23,162,184,1)"
+        ];
+        const sirKeys = ["Susceptible", "Infected", "Recovered"];
 
-        const chartCtx = document.getElementById('sirChart').getContext('2d');
-
-        const data = {
-            labels: [],
-            datasets: [
-                {
-                    label: 'Susceptible',
-                    borderColor: 'rgba(54,162,235,1)',
-                    backgroundColor: 'rgba(54,162,235,0.1)',
-                    data: [],
-                    tension: 0.2
-                },
-                {
-                    label: 'Infected',
-                    borderColor: 'rgba(255,99,132,1)',
-                    backgroundColor: 'rgba(255,99,132,0.1)',
-                    data: [],
-                    tension: 0.2
-                },
-                {
-                    label: 'Recovered',
-                    borderColor: 'rgba(75,192,192,1)',
-                    backgroundColor: 'rgba(75,192,192,0.1)',
-                    data: [],
-                    tension: 0.2
-                }
-            ]
-        };
-
-        const config = {
-            type: 'line',
-            data: data,
+        const chartData = { labels: [], datasets: [] };
+        const statsChart = new Chart(document.getElementById("statsChart").getContext("2d"), {
+            type: "line",
+            data: chartData,
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
                 scales: {
-                    x: { display: true, title: { display: true, text: 'Tick' } },
-                    y: { display: true, title: { display: true, text: 'Count' } }
+                    x: { title: { display: true, text: "Tick" } },
+                    y: { title: { display: true, text: "Count" }, beginAtZero: true },
+                    y1: {
+                        position: "right",
+                        min: 0,
+                        max: 1,
+                        display: false,
+                        title: { display: true, text: "Fraction" },
+                        grid: { drawOnChartArea: false }
+                    }
                 }
             }
-        };
+        });
+        let datasetIndexByKey = {};
 
-        const sirChart = new Chart(chartCtx, config);
+        function resetChart() {
+            chartData.labels.length = 0;
+            chartData.datasets.length = 0;
+            datasetIndexByKey = {};
+            statsChart.options.scales.y1.display = false;
+            statsChart.update("none");
+        }
 
-        connection.on('ReceiveTick', (tick) => {
-            data.labels.push(tick.tick);
-            data.datasets[0].data.push(tick.susceptible);
-            data.datasets[1].data.push(tick.infected);
-            data.datasets[2].data.push(tick.recovered);
+        function prettyLabel(key) {
+            return key.replace(/([a-z])([A-Z])/g, "$1 $2");
+        }
 
-            // trim to maxPoints
-            if (data.labels.length > maxPoints) {
-                data.labels.shift();
-                data.datasets.forEach(ds => ds.data.shift());
+        function ensureSeries(key) {
+            if (key in datasetIndexByKey) return datasetIndexByKey[key];
+
+            const isFraction = key.includes("Fraction");
+            if (isFraction) statsChart.options.scales.y1.display = true;
+
+            const color = seriesColors[chartData.datasets.length % seriesColors.length];
+            chartData.datasets.push({
+                label: prettyLabel(key),
+                borderColor: color,
+                backgroundColor: color.replace(",1)", ",0.1)"),
+                data: new Array(chartData.labels.length).fill(null),
+                tension: 0.2,
+                pointRadius: 0,
+                yAxisID: isFraction ? "y1" : "y"
+            });
+            datasetIndexByKey[key] = chartData.datasets.length - 1;
+            return datasetIndexByKey[key];
+        }
+
+        function addTick(tick) {
+            chartData.labels.push(tick.tick);
+
+            const values = currentRun && currentRun.model === "SIR"
+                ? { Susceptible: tick.susceptible, Infected: tick.infected, Recovered: tick.recovered }
+                : {};
+            Object.assign(values, tick.metrics || {});
+
+            Object.entries(values).forEach(([key, value]) => {
+                chartData.datasets[ensureSeries(key)].data.push(value);
+            });
+
+            chartData.datasets.forEach(ds => {
+                if (ds.data.length < chartData.labels.length) ds.data.push(null);
+            });
+
+            if (chartData.labels.length > maxPoints) {
+                chartData.labels.shift();
+                chartData.datasets.forEach(ds => ds.data.shift());
             }
 
-            sirChart.update('none');
+            statsChart.update("none");
+        }
+
+        function setStatus(status) {
+            currentStatus = status;
+            statusBadge.textContent = status;
+            statusBadge.className = "status " + status;
+
+            const active = status === "Running" || status === "Paused";
+            pauseButton.disabled = !active;
+            pauseButton.textContent = status === "Paused" ? "Resume" : "Pause";
+            resetButton.disabled = status === "Stopped";
+            startButton.textContent = active ? "Restart" : "Start";
+        }
+
+        function showRun(run) {
+            currentRun = run;
+            modelTitle.textContent = run.displayName;
+            modelDescription.textContent = run.description;
+            chartTitle.textContent = run.displayName + " statistics";
+            tickCounter.textContent = `Tick 0 / ${run.tickLimit}`;
+            document.title = run.displayName + " - ABM Framework Dashboard";
+            modelSelect.value = run.model;
+            resetChart();
+            setGridSize(run.gridWidth, run.gridHeight);
+        }
+
+        function showNoRun() {
+            currentRun = null;
+            modelTitle.textContent = "No simulation running";
+            modelDescription.textContent = "Pick a model and press Start.";
+            chartTitle.textContent = "Statistics";
+            tickCounter.textContent = "";
+            document.title = "ABM Framework Dashboard";
+            resetChart();
+            clearGrid();
+        }
+
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/simulationHub")
+            .withAutomaticReconnect()
+            .build();
+
+        connection.on("SimulationStarted", showRun);
+        connection.on("SimulationReset", showNoRun);
+        connection.on("SimulationStatus", setStatus);
+
+        connection.on("SpeedChanged", delayMs => {
+            speedSlider.value = levelForDelay(delayMs);
+            showSpeed(delayMs);
         });
+
+        connection.on("ReceiveTick", tick => {
+            if (!currentRun || tick.runId !== currentRun.runId) return;
+            tickCounter.textContent = `Tick ${tick.tick + 1} / ${currentRun.tickLimit}`;
+            addTick(tick);
+        });
+
+        connection.on("ReceiveGrid", grid => {
+            if (!currentRun || grid.runId !== currentRun.runId) return;
+            drawAgents(grid.agents);
+        });
+
+        startButton.addEventListener("click", () => {
+            connection.invoke("StartSimulation", modelSelect.value).catch(err => console.error(err));
+        });
+
+        pauseButton.addEventListener("click", () => {
+            const method = currentStatus === "Paused" ? "ResumeSimulation" : "PauseSimulation";
+            connection.invoke(method).catch(err => console.error(err));
+        });
+
+        resetButton.addEventListener("click", () => {
+            connection.invoke("ResetSimulation").catch(err => console.error(err));
+        });
+
+        speedSlider.addEventListener("input", () => {
+            const delayMs = speedLevels[speedSlider.value - 1];
+            showSpeed(delayMs);
+            clearTimeout(speedTimer);
+            speedTimer = setTimeout(() => {
+                connection.invoke("SetSpeed", delayMs).catch(err => console.error(err));
+            }, 120);
+        });
+
+        showSpeed(speedLevels[speedSlider.value - 1]);
+
+        async function init() {
+            try {
+                await connection.start();
+                const models = await connection.invoke("GetModels");
+                modelSelect.innerHTML = models
+                    .map(m => `<option value="${m.model}">${m.displayName}</option>`)
+                    .join("");
+                if (currentRun) modelSelect.value = currentRun.model;
+            } catch (err) {
+                console.error(err);
+                modelDescription.textContent = "Could not connect to the simulation server.";
+            }
+        }
+
+        init();
     </script>
 </body>
 </html>

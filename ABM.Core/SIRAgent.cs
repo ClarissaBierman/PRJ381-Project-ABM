@@ -26,7 +26,9 @@ namespace ABM.Core
 
         public void Infect() => State = HealthState.Infected;
 
-        public override void Step(IReadOnlyList<Agent> neighbours, Random rng)
+        public override string DisplayState => State.ToString();
+
+        public override void Step(IReadOnlyList<Agent> neighbours, Random rng, IEnvironmentManager environment)
         {
             switch (State)
             {

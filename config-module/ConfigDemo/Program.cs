@@ -11,6 +11,7 @@ if (options.ConfigPath is null)
 {
     Console.Error.WriteLine("Missing required flag: --config <path-to-scenario-file>");
     Console.Error.WriteLine("Example: dotnet run -- --config ../configs/sir-default.json");
+    Console.Error.WriteLine("Example (batch): dotnet run -- --config ../configs/schelling-default.json --batch 20");
     return 1;
 }
 
@@ -38,66 +39,105 @@ catch (Exception ex) when (ex is FileNotFoundException or NotSupportedException)
 
 PrintSummary(config);
 
-var dbPath = Path.Combine(AppContext.BaseDirectory, "simulations.db");
-var repository = new SimulationRepository(dbPath);
-
-var simulationId = Guid.NewGuid();
-var startedAt = DateTime.UtcNow;
-
-var simulation = new Simulation
+if (options.BatchReplicates is int replicateCount)
 {
-    Id = simulationId,
-    StartedAt = startedAt,
-    EndedAt = null,
-    ScenarioName = config.ScenarioName,
-    ConfigurationJson = JsonSerializer.Serialize(config)
-};
-await repository.SaveSimulationAsync(simulation);
+    return await RunBatchAsync(config, replicateCount);
+}
 
-SimulationEngine engine = new SimulationEngine();
+return await RunSingleAsync(config);
 
-engine.TickCompleted += async (sender, stats) =>
+// --- Single run: full tick history persisted to SQLite, CSV export at the end. ---
+static async Task<int> RunSingleAsync(SimulationConfig config)
 {
-    Console.WriteLine($"Tick {stats.Tick} | S={stats.Susceptible} I={stats.Infected} R={stats.Recovered}");
+    var dbPath = Path.Combine(AppContext.BaseDirectory, "simulations.db");
+    var repository = new SimulationRepository(dbPath);
 
-    var tickRecord = new TickRecord
+    var simulationId = Guid.NewGuid();
+    var startedAt = DateTime.UtcNow;
+
+    var simulation = new Simulation
     {
-        SimulationId = simulationId,
-        TickNumber = stats.Tick,
-        Susceptible = stats.Susceptible,
-        Infected = stats.Infected,
-        Recovered = stats.Recovered
+        Id = simulationId,
+        StartedAt = startedAt,
+        EndedAt = null,
+        ScenarioName = config.ScenarioName,
+        ConfigurationJson = JsonSerializer.Serialize(config)
     };
-    await repository.SaveTickRecordAsync(tickRecord);
+    await repository.SaveSimulationAsync(simulation);
 
-    var snapshot = engine.GetSnapshot();
-    var agentStates = snapshot.Agents.Select(a => new AgentState
+    SimulationEngine engine = new SimulationEngine();
+
+    engine.TickCompleted += async (sender, stats) =>
     {
-        SimulationId = simulationId,
-        TickNumber = stats.Tick,
-        AgentId = a.Id,
-        X = a.Position.X,
-        Y = a.Position.Y,
-        HealthState = a.State.ToString()
-    }).ToArray();
-    await repository.SaveAgentStatesAsync(agentStates);
-};
+        Console.WriteLine(stats);
 
-engine.SimulationCompleted += (sender, e) =>
+        var tickRecord = new TickRecord
+        {
+            SimulationId = simulationId,
+            TickNumber = stats.Tick,
+            // Only meaningful for the SIR model; 0 for every other model
+            // (their results live in stats.Metrics instead, which the
+            // current persistence schema doesn't have a column for yet).
+            Susceptible = stats.Susceptible,
+            Infected = stats.Infected,
+            Recovered = stats.Recovered
+        };
+        await repository.SaveTickRecordAsync(tickRecord);
+
+        var snapshot = engine.GetSnapshot();
+        var agentStates = snapshot.Agents.Select(a => new AgentState
+        {
+            SimulationId = simulationId,
+            TickNumber = stats.Tick,
+            AgentId = a.Id,
+            X = a.Position.X,
+            Y = a.Position.Y,
+            // Generic across all four models: SIR stores "Susceptible" /
+            // "Infected" / "Recovered" here (unchanged from before), while
+            // Schelling/Boids/Ant Foraging store their own DisplayState.
+            HealthState = a.DisplayState
+        }).ToArray();
+        await repository.SaveAgentStatesAsync(agentStates);
+    };
+
+    engine.SimulationCompleted += (sender, e) =>
+    {
+        Console.WriteLine();
+        Console.WriteLine("Simulation completed.");
+    };
+
+    await engine.StartAsync(config);
+
+    // Export the full tick history to CSV for external analysis
+    var ticks = await repository.GetTicksAsync(simulationId);
+    var csvPath = Path.Combine(AppContext.BaseDirectory, $"simulation-{simulationId}.csv");
+    await CsvExporter.ExportTicksAsync(ticks, csvPath);
+    Console.WriteLine($"Results exported to: {csvPath}");
+
+    return 0;
+}
+
+// --- Batch run: Monte Carlo replicates, no per-tick persistence (too slow
+// for many replicates), summary CSV at the end. ---
+static async Task<int> RunBatchAsync(SimulationConfig config, int replicateCount)
 {
+    Console.WriteLine($"Running {replicateCount} Monte Carlo replicates...");
+
+    var runner = new MonteCarloRunner();
+    var results = await runner.RunAsync(config, replicateCount, config.RandomSeed);
+
+    foreach (var result in results)
+    {
+        Console.WriteLine($"Replicate {result.ReplicateIndex} (seed={result.Seed}): {result.FinalStatistics}");
+    }
+
+    var csvPath = Path.Combine(AppContext.BaseDirectory, $"monte-carlo-{config.Model}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv");
+    await MonteCarloCsvExporter.ExportAsync(results, csvPath);
     Console.WriteLine();
-    Console.WriteLine("Simulation completed.");
-};
+    Console.WriteLine($"Batch results exported to: {csvPath}");
 
-await engine.StartAsync(config);
-
-// Export the full tick history to CSV for external analysis
-var ticks = await repository.GetTicksAsync(simulationId);
-var csvPath = Path.Combine(AppContext.BaseDirectory, $"simulation-{simulationId}.csv");
-await CsvExporter.ExportTicksAsync(ticks, csvPath);
-Console.WriteLine($"Results exported to: {csvPath}");
-
-return 0;
+    return 0;
+}
 
 static ParsedArgs ParseArgs(string[] args)
 {
@@ -121,6 +161,10 @@ static ParsedArgs ParseArgs(string[] args)
                 result.Agents = agents;
                 i++;
                 break;
+            case "--batch" when i + 1 < args.Length && int.TryParse(args[i + 1], out var batch):
+                result.BatchReplicates = batch;
+                i++;
+                break;
         }
     }
     return result;
@@ -129,10 +173,9 @@ static ParsedArgs ParseArgs(string[] args)
 static void PrintSummary(SimulationConfig config)
 {
     Console.WriteLine($"Scenario:            {config.ScenarioName}");
+    Console.WriteLine($"Model:               {config.Model}");
     Console.WriteLine($"Grid:                {config.GridWidth} x {config.GridHeight} ({config.Topology})");
-    Console.WriteLine($"Agents:              {config.AgentCount} (initial infected: {config.InitialInfected})");
-    Console.WriteLine($"Infection prob.:     {config.InfectionProbability}");
-    Console.WriteLine($"Recovery ticks:      {config.RecoveryTicks}");
+    Console.WriteLine($"Agents:              {config.AgentCount}");
     Console.WriteLine($"Tick limit:          {config.TickLimit}");
     Console.WriteLine($"Scheduler:           {config.Scheduler}");
     Console.WriteLine($"Random seed:         {(config.RandomSeed?.ToString() ?? "none (non-deterministic)")}");
@@ -145,5 +188,5 @@ internal sealed class ParsedArgs
     public int? Seed { get; set; }
     public int? Ticks { get; set; }
     public int? Agents { get; set; }
+    public int? BatchReplicates { get; set; }
 }
-
