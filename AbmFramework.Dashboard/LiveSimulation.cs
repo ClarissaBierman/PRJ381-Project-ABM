@@ -178,16 +178,21 @@ public class LiveSimulationService
             Metrics = stats.Metrics
         };
 
+        var snapshot = engine.GetSnapshot();
         var grid = new GridData
         {
             RunId = runId,
-            Agents = engine.GetSnapshot().Agents.Select(a => new AgentDTO
+            Agents = snapshot.Agents.Select(a => new AgentDTO
             {
                 Id = a.Id,
                 X = a.Position.X,
                 Y = a.Position.Y,
                 State = a.DisplayState
-            }).ToList()
+            }).ToList(),
+            GrassPatches = snapshot.Grid.AllPatches()
+                .Where(p => p.GetProperty("grass") is true)
+                .Select(p => new PatchDTO { X = p.X, Y = p.Y })
+                .ToList()
         };
 
         _ = BroadcastAsync(tick, grid, token);

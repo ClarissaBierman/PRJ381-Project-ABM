@@ -20,6 +20,7 @@ public static class ModelCatalog
         ModelType.Schelling => "Schelling Segregation",
         ModelType.Boids => "Boids Flocking",
         ModelType.AntForaging => "Ant Foraging",
+        ModelType.WolfSheep => "Wolf-Sheep Predation",
         _ => model.ToString()
     };
 
@@ -33,6 +34,8 @@ public static class ModelCatalog
             "Each boid follows three local rules (separation, alignment and cohesion), and flocking emerges from them.",
         ModelType.AntForaging =>
             "Ants search for food, then lay pheromone trails back to the nest that other ants follow.",
+        ModelType.WolfSheep =>
+            "Sheep graze on regrowing grass while wolves hunt sheep; both populations spend energy, reproduce, and die when depleted.",
         _ => string.Empty
     };
 
@@ -73,6 +76,21 @@ public static class ModelCatalog
             AgentCount = 30,
             FoodSources = 3,
             FoodPerSource = 50,
+            TickLimit = 500,
+            Scheduler = SchedulerKind.Random
+        },
+
+        ModelType.WolfSheep => new SimulationConfig
+        {
+            ScenarioName = DisplayName(model),
+            Model = ModelType.WolfSheep,
+            GridWidth = 20,
+            GridHeight = 20,
+            Topology = GridTopology.Toroidal,
+            AgentCount = 100,
+            InitialSheep = 80,
+            InitialWolves = 20,
+            GrassRegrowthProbability = 0.05,
             TickLimit = 500,
             Scheduler = SchedulerKind.Random
         },

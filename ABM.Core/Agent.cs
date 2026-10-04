@@ -10,6 +10,9 @@ namespace ABM.Core
     {
         public int Id { get; }
         public (int X, int Y) Position { get; set; }
+        public bool IsAlive { get; private set; } = true;
+
+        private readonly List<Func<int, Agent>> pendingOffspring = new();
 
         protected Agent(int id, (int X, int Y) position)
         {
@@ -27,5 +30,19 @@ namespace ABM.Core
         // dashboard and persistence layer to display/record any agent type
         // generically. Subtypes override this to expose their own state.
         public virtual string DisplayState => GetType().Name;
+
+        protected void QueueOffspring(Func<int, Agent> createOffspring)
+        {
+            pendingOffspring.Add(createOffspring);
+        }
+
+        public void Die() => IsAlive = false;
+
+        public IReadOnlyList<Agent> CreatePendingOffspring(Func<int> nextId)
+        {
+            var offspring = pendingOffspring.Select(factory => factory(nextId())).ToList();
+            pendingOffspring.Clear();
+            return offspring;
+        }
     }
 }

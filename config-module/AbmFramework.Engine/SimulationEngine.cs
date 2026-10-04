@@ -16,6 +16,8 @@ public sealed class SimulationEngine : ISimulationEngine
 
     private Random? _random;
 
+    private int _nextAgentId;
+
     private SimulationState _state = SimulationState.Stopped;
 
     private CancellationTokenSource? _pauseTokenSource;
@@ -56,6 +58,7 @@ public sealed class SimulationEngine : ISimulationEngine
         CurrentTick = 0;
 
         _agents.Clear();
+        _nextAgentId = 0;
 
         _random = config.RandomSeed.HasValue
             ? new Random(config.RandomSeed.Value)
@@ -76,6 +79,7 @@ public sealed class SimulationEngine : ISimulationEngine
         };
 
         CreateAgents();
+        _nextAgentId = _agents.Count;
 
         if (config.Model == ModelType.SIR)
         {
@@ -109,8 +113,53 @@ public sealed class SimulationEngine : ISimulationEngine
                 CreateAntAgents();
                 break;
 
+            case ModelType.WolfSheep:
+                CreateWolfSheepAgents();
+                break;
+
             default:
                 throw new InvalidOperationException($"Unknown model type: {_config.Model}");
+        }
+    }
+
+    private void CreateWolfSheepAgents()
+    {
+        for (int y = 0; y < _config!.GridHeight; y++)
+        {
+            for (int x = 0; x < _config.GridWidth; x++)
+            {
+                _grid!.GetPatch(x, y).SetProperty("grass", true);
+            }
+        }
+
+        for (int id = 0; id < _config.InitialSheep; id++)
+        {
+            var position = (_random!.Next(_config.GridWidth), _random.Next(_config.GridHeight));
+            var sheep = new SheepAgent(
+                id,
+                position,
+                _config.InitialSheepEnergy,
+                _config.EnergyLossPerTick,
+                _config.GrassEnergyGain,
+                _config.SheepReproductionProbability);
+
+            _agents.Add(sheep);
+            _grid!.Place(sheep);
+        }
+
+        for (int id = 0; id < _config.InitialWolves; id++)
+        {
+            var position = (_random!.Next(_config.GridWidth), _random.Next(_config.GridHeight));
+            var wolf = new WolfAgent(
+                _config.InitialSheep + id,
+                position,
+                _config.InitialWolfEnergy,
+                _config.EnergyLossPerTick,
+                _config.SheepEnergyGain,
+                _config.WolfReproductionProbability);
+
+            _agents.Add(wolf);
+            _grid!.Place(wolf);
         }
     }
 
@@ -366,8 +415,14 @@ public sealed class SimulationEngine : ISimulationEngine
         if (_scheduler is null || _grid is null || _random is null || _config is null)
             throw new InvalidOperationException("Simulation has not been initialised.");
 
-        foreach (var agent in _scheduler.OrderAgents(_agents, _random))
+        foreach (var agent in _scheduler.OrderAgents(_agents, _random).ToList())
         {
+            if (!agent.IsAlive)
+            {
+                RemoveAgent(agent);
+                continue;
+            }
+
             var oldPosition = agent.Position;
 
             //Obtain neighbouring agents from the grid.
@@ -383,7 +438,7 @@ public sealed class SimulationEngine : ISimulationEngine
             //whole grid, only its immediate neighbours - so the engine
             //(which owns the grid) moves it to a random empty cell when it
             //flags itself unhappy.
-            if (agent is SchellingAgent schellingAgent && !schellingAgent.IsHappy)
+            if (agent.IsAlive && agent is SchellingAgent schellingAgent && !schellingAgent.IsHappy)
             {
                 var empty = _grid.FindRandomEmptyPosition(_random);
                 if (empty != null)
@@ -393,15 +448,54 @@ public sealed class SimulationEngine : ISimulationEngine
             }
 
             //Keep the grid's occupant lists in sync with any position change.
-            if (agent.Position != oldPosition)
+            if (!agent.IsAlive)
+            {
+                RemoveAgent(agent);
+            }
+            else if (agent.Position != oldPosition)
             {
                 _grid.Move(agent, oldPosition);
+            }
+
+            foreach (var offspring in agent.CreatePendingOffspring(() => _nextAgentId++))
+            {
+                _agents.Add(offspring);
+                _grid.Place(offspring);
+            }
+
+            foreach (var deadAgent in _agents.Where(a => !a.IsAlive).ToList())
+            {
+                RemoveAgent(deadAgent);
             }
         }
 
         if (_config.Model == ModelType.AntForaging)
         {
             DecayPheromones();
+        }
+        else if (_config.Model == ModelType.WolfSheep)
+        {
+            RegrowGrass();
+        }
+    }
+
+    private void RemoveAgent(Agent agent)
+    {
+        _grid!.Remove(agent);
+        _agents.Remove(agent);
+    }
+
+    private void RegrowGrass()
+    {
+        if (_grid is null || _config is null || _random is null) return;
+
+        foreach (var patch in _grid.AllPatches())
+        {
+            if (patch.GetProperty("grass") is false &&
+                _random.NextDouble() < _config.GrassRegrowthProbability)
+            {
+                patch.SetProperty("grass", true);
+            }
         }
     }
 
@@ -434,7 +528,27 @@ public sealed class SimulationEngine : ISimulationEngine
             ModelType.Schelling => BuildSchellingStatistics(),
             ModelType.Boids => BuildBoidStatistics(),
             ModelType.AntForaging => BuildAntStatistics(),
+            ModelType.WolfSheep => BuildWolfSheepStatistics(),
             _ => throw new InvalidOperationException($"Unknown model type: {_config.Model}")
+        };
+    }
+
+    private TickStatistics BuildWolfSheepStatistics()
+    {
+        int sheep = _agents.OfType<SheepAgent>().Count();
+        int wolves = _agents.OfType<WolfAgent>().Count();
+        int grass = _grid?.AllPatches().Count(p => p.GetProperty("grass") is true) ?? 0;
+
+        return new TickStatistics
+        {
+            Tick = CurrentTick,
+            TotalPopulation = sheep + wolves,
+            Metrics = new Dictionary<string, double>
+            {
+                ["Sheep"] = sheep,
+                ["Wolves"] = wolves,
+                ["Grass"] = grass
+            }
         };
     }
 
@@ -582,6 +696,7 @@ public sealed class SimulationEngine : ISimulationEngine
         CurrentTick = 0;
 
         _agents.Clear();
+        _nextAgentId = 0;
 
         _grid = null;
         _config = null;

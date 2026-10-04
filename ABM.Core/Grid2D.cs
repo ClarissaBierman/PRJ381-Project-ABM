@@ -63,6 +63,15 @@ namespace ABM.Core
             Place(agent);
         }
 
+        public void Remove(Agent agent)
+        {
+            var key = ResolvePosition(agent.Position);
+            if (key != null && occupants.TryGetValue(key.Value, out var list))
+            {
+                list.Remove(agent);
+            }
+        }
+
         public List<Agent> GetAgentsAt(int x, int y)
         {
             var key = ResolvePosition((x, y));
@@ -114,7 +123,7 @@ namespace ABM.Core
 
                 if (occupants.TryGetValue(neighbourKey.Value, out var list))
                 {
-                    result.AddRange(list.Where(a => a != agent));
+                    result.AddRange(list.Where(a => a != agent && a.IsAlive));
                 }
             }
 

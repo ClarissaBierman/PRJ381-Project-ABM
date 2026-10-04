@@ -19,7 +19,8 @@ public enum ModelType
     SIR,
     Schelling,
     Boids,
-    AntForaging
+    AntForaging,
+    WolfSheep
 }
 
 public sealed class SimulationConfig
@@ -79,4 +80,25 @@ public sealed class SimulationConfig
     public double PheromoneDecayRate { get; set; } = 0.02;
 
     public double ExplorationChance { get; set; } = 0.1;
+
+    // --- Wolf-Sheep predation parameters ---
+    public int InitialSheep { get; set; } = 80;
+
+    public int InitialWolves { get; set; } = 20;
+
+    public double InitialSheepEnergy { get; set; } = 4.0;
+
+    public double InitialWolfEnergy { get; set; } = 8.0;
+
+    public double EnergyLossPerTick { get; set; } = 1.0;
+
+    public double GrassEnergyGain { get; set; } = 4.0;
+
+    public double SheepEnergyGain { get; set; } = 8.0;
+
+    public double SheepReproductionProbability { get; set; } = 0.04;
+
+    public double WolfReproductionProbability { get; set; } = 0.05;
+
+    public double GrassRegrowthProbability { get; set; } = 0.03;
 }

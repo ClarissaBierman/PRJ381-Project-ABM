@@ -148,6 +148,39 @@ public static class ConfigLoader
                 errors.Add($"ExplorationChance must be between 0.0 and 1.0 (got {config.ExplorationChance}).");
         }
 
+        if (config.Model == ModelType.WolfSheep)
+        {
+            if (config.InitialSheep < 0)
+                errors.Add($"InitialSheep cannot be negative (got {config.InitialSheep}).");
+
+            if (config.InitialWolves < 0)
+                errors.Add($"InitialWolves cannot be negative (got {config.InitialWolves}).");
+
+            if (config.InitialSheepEnergy <= 0)
+                errors.Add($"InitialSheepEnergy must be positive (got {config.InitialSheepEnergy}).");
+
+            if (config.InitialWolfEnergy <= 0)
+                errors.Add($"InitialWolfEnergy must be positive (got {config.InitialWolfEnergy}).");
+
+            if (config.EnergyLossPerTick <= 0)
+                errors.Add($"EnergyLossPerTick must be positive (got {config.EnergyLossPerTick}).");
+
+            if (config.GrassEnergyGain <= 0)
+                errors.Add($"GrassEnergyGain must be positive (got {config.GrassEnergyGain}).");
+
+            if (config.SheepEnergyGain <= 0)
+                errors.Add($"SheepEnergyGain must be positive (got {config.SheepEnergyGain}).");
+
+            if (config.SheepReproductionProbability is < 0.0 or > 1.0)
+                errors.Add($"SheepReproductionProbability must be between 0.0 and 1.0 (got {config.SheepReproductionProbability}).");
+
+            if (config.WolfReproductionProbability is < 0.0 or > 1.0)
+                errors.Add($"WolfReproductionProbability must be between 0.0 and 1.0 (got {config.WolfReproductionProbability}).");
+
+            if (config.GrassRegrowthProbability is < 0.0 or > 1.0)
+                errors.Add($"GrassRegrowthProbability must be between 0.0 and 1.0 (got {config.GrassRegrowthProbability}).");
+        }
+
         if (errors.Count > 0)
         {
             throw new ConfigValidationException(errors);

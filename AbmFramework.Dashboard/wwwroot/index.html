@@ -169,6 +169,8 @@
             display: inline-block;
         }
 
+        .swatch.square { border-radius: 2px; }
+
         .chart-panel {
             flex: 1;
             min-width: 420px;
@@ -264,6 +266,10 @@
             "rgba(54,162,235,1)", "rgba(255,99,132,1)", "rgba(75,192,192,1)",
             "rgba(255,193,7,1)", "rgba(155,89,182,1)", "rgba(23,162,184,1)"
         ];
+        const modelMetricColors = {
+            Sheep: "rgba(241,196,15,1)",
+            Wolves: "rgba(52,73,94,1)"
+        };
         const sirKeys = ["Susceptible", "Infected", "Recovered"];
 
         const chartData = { labels: [], datasets: [] };
@@ -308,7 +314,7 @@
             const isFraction = key.includes("Fraction");
             if (isFraction) statsChart.options.scales.y1.display = true;
 
-            const color = seriesColors[chartData.datasets.length % seriesColors.length];
+            const color = modelMetricColors[key] || seriesColors[chartData.datasets.length % seriesColors.length];
             chartData.datasets.push({
                 label: prettyLabel(key),
                 borderColor: color,
@@ -403,7 +409,7 @@
 
         connection.on("ReceiveGrid", grid => {
             if (!currentRun || grid.runId !== currentRun.runId) return;
-            drawAgents(grid.agents);
+            drawAgents(grid.agents, grid.grassPatches);
         });
 
         startButton.addEventListener("click", () => {

@@ -17,7 +17,10 @@ const stateStyles = {
     "Group1-Unhappy": { color: "#f5b5bc", label: "Group B, unhappy" },
     "BoidAgent": { color: "#3366cc", label: "Boid" },
     "Searching": { color: "#8d6e63", label: "Searching for food" },
-    "ReturningWithFood": { color: "#28a745", label: "Carrying food home" }
+    "ReturningWithFood": { color: "#28a745", label: "Carrying food home" },
+    "Grass": { color: "#8dbf78", label: "Grass" },
+    "Sheep": { color: "#f1c40f", label: "Sheep" },
+    "Wolf": { color: "#34495e", label: "Wolves" }
 };
 
 const fallbackPalette = ["#ffc107", "#9b59b6", "#17a2b8", "#e67e22", "#6c757d"];
@@ -58,11 +61,22 @@ function drawGridLines() {
     }
 }
 
-function drawAgents(agents) {
+function drawAgents(agents, grassPatches = []) {
     drawGridLines();
 
     const radius = Math.max(2, cellSize * 0.3);
     let legendChanged = false;
+
+    grassPatches.forEach(patch => {
+        const style = styleFor("Grass");
+        if (!seenStates.includes("Grass")) {
+            seenStates.push("Grass");
+            legendChanged = true;
+        }
+
+        ctx.fillStyle = style.color;
+        ctx.fillRect(patch.x * cellSize + 1, patch.y * cellSize + 1, Math.max(0, cellSize - 1), Math.max(0, cellSize - 1));
+    });
 
     agents.forEach(a => {
         const style = styleFor(a.state);
@@ -86,7 +100,8 @@ function renderLegend() {
     legend.innerHTML = seenStates
         .map(state => {
             const style = styleFor(state);
-            return `<span class="legend-item"><span class="swatch" style="background:${style.color}"></span>${style.label}</span>`;
+            const shape = state === "Grass" ? "swatch square" : "swatch";
+            return `<span class="legend-item"><span class="${shape}" style="background:${style.color}"></span>${style.label}</span>`;
         })
         .join("");
 }
