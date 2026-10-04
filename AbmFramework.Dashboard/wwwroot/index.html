@@ -85,6 +85,16 @@
             min-width: 90px;
         }
 
+        .parameter-panel { margin: 0 0 20px; max-width: 900px; }
+        #parameterControls { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px 20px; }
+        .parameter-control { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; }
+        .parameter-control input[type="range"] { grid-column: 1 / -1; width: 100%; }
+        .parameter-control output { color: #555; font-variant-numeric: tabular-nums; }
+        .run-options { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 16px; }
+        .run-options label { display: flex; flex-direction: column; gap: 5px; font-weight: bold; }
+        .run-options input { width: 150px; padding: 7px; border: 1px solid #b0b0b0; border-radius: 6px; font-size: 15px; }
+        #validationErrors { color: #a52834; white-space: pre-line; font-weight: bold; margin: 12px 0 0; }
+
         .model-heading {
             display: flex;
             flex-wrap: wrap;
@@ -261,6 +271,20 @@
             </div>
         </div>
 
+        <div class="panel parameter-panel">
+            <h3>Simulation settings</h3>
+            <div id="parameterControls"></div>
+            <div class="run-options">
+                <label for="tickLimit">Run length (ticks)
+                    <input id="tickLimit" type="number" min="1" max="1000000" step="1" />
+                </label>
+                <label for="randomSeed">Random seed (optional)
+                    <input id="randomSeed" type="number" step="1" placeholder="No seed" />
+                </label>
+            </div>
+            <div id="validationErrors" role="alert" aria-live="polite"></div>
+        </div>
+
         <div class="model-heading">
             <h2 id="modelTitle">No simulation running</h2>
             <span id="statusBadge" class="status">Stopped</span>
@@ -319,6 +343,55 @@
         const chartTitle = document.getElementById("chartTitle");
         const speedSlider = document.getElementById("speedSlider");
         const speedLabel = document.getElementById("speedLabel");
+        const parameterControls = document.getElementById("parameterControls");
+        const tickLimitInput = document.getElementById("tickLimit");
+        const randomSeedInput = document.getElementById("randomSeed");
+        const validationErrors = document.getElementById("validationErrors");
+
+        const parameterDefinitions = {
+            SIR: [
+                ["AgentCount", "Number of agents", 1, 10000, 1], ["InitialInfected", "Initial infected", 0, 10000, 1],
+                ["InfectionProbability", "Infection chance", 0, 1, 0.01, true], ["RecoveryTicks", "Recovery time (ticks)", 1, 500, 1]
+            ],
+            Schelling: [["AgentCount", "Number of agents", 1, 10000, 1], ["SimilarityThreshold", "Similarity threshold", 0, 1, 0.01, true], ["GroupARatio", "% in group A", 0, 1, 0.01, true]],
+            Boids: [["AgentCount", "Number of boids", 1, 10000, 1], ["PerceptionRadius", "Vision radius", 0.1, 20, 0.1], ["SeparationWeight", "Separation", 0, 10, 0.1], ["AlignmentWeight", "Alignment", 0, 10, 0.1], ["CohesionWeight", "Cohesion", 0, 10, 0.1], ["MaxSpeed", "Maximum speed", 0.1, 10, 0.1]],
+            AntForaging: [["AgentCount", "Number of ants", 1, 10000, 1], ["FoodSources", "Number of food piles", 1, 100, 1], ["FoodPerSource", "Food per pile", 1, 1000, 1], ["PheromoneDepositAmount", "Pheromone dropped", 0, 100, 0.1], ["PheromoneDecayRate", "Pheromone decay rate", 0, 1, 0.01], ["ExplorationChance", "Exploration chance", 0, 1, 0.01, true]],
+            WolfSheep: [["InitialSheep", "Initial sheep", 0, 10000, 1], ["InitialWolves", "Initial wolves", 0, 10000, 1], ["GrassRegrowthProbability", "Grass regrowth chance", 0, 1, 0.01, true], ["GrassEnergyGain", "Sheep gain from food", 0.1, 100, 0.1], ["SheepEnergyGain", "Wolf gain from food", 0.1, 100, 0.1], ["SheepReproductionProbability", "Sheep reproduce", 0, 1, 0.01, true], ["WolfReproductionProbability", "Wolf reproduce", 0, 1, 0.01, true]]
+        };
+        let modelDefaults = {};
+        let pendingConfigs = {};
+        let activePending = null;
+        const configKey = name => name[0].toLowerCase() + name.slice(1);
+
+        function renderConfiguration(model) {
+            if (activePending) {
+                activePending.tickLimit = Number(tickLimitInput.value);
+                activePending.randomSeed = randomSeedInput.value === "" ? null : Number(randomSeedInput.value);
+            }
+            activePending = structuredClone(pendingConfigs[model] || modelDefaults[model]);
+            pendingConfigs[model] = activePending;
+            parameterControls.replaceChildren();
+            (parameterDefinitions[model] || []).forEach(([key, label, min, max, step, percent]) => {
+                const wrap = document.createElement("label");
+                wrap.className = "parameter-control";
+                const caption = document.createElement("span"); caption.textContent = label;
+                const value = document.createElement("output"); value.id = `value-${key}`;
+                const input = document.createElement("input");
+                input.type = "range"; input.min = min; input.max = max; input.step = step;
+                input.value = activePending[configKey(key)]; input.setAttribute("aria-label", label);
+                const display = n => percent ? `${Math.round(Number(n) * 100)}%` : String(n);
+                value.textContent = display(input.value);
+                input.addEventListener("input", () => {
+                    const raw = Number(input.value);
+                    activePending[configKey(key)] = percent ? raw : (Number.isInteger(step) ? Math.round(raw) : raw);
+                    value.textContent = display(input.value);
+                });
+                wrap.append(caption, value, input); parameterControls.append(wrap);
+            });
+            tickLimitInput.value = activePending.tickLimit;
+            randomSeedInput.value = activePending.randomSeed ?? "";
+            validationErrors.textContent = "";
+        }
 
         const speedLevels = [1000, 500, 250, 150, 100, 50, 30, 20, 15, 10];
         let speedTimer = null;
@@ -494,6 +567,7 @@
         });
 
         modelSelect.addEventListener("change", () => {
+            renderConfiguration(modelSelect.value);
             if (!currentRun) updateDisplaySwitches();
         });
 
@@ -523,7 +597,25 @@
         });
 
         startButton.addEventListener("click", () => {
-            connection.invoke("StartSimulation", modelSelect.value).catch(err => console.error(err));
+            validationErrors.textContent = "";
+            const tickText = tickLimitInput.value.trim();
+            const seedText = randomSeedInput.value.trim();
+            if (!/^\d+$/.test(tickText) || Number(tickText) < 1 || Number(tickText) > 1000000) {
+                validationErrors.textContent = "Run length must be an integer from 1 to 1,000,000."; return;
+            }
+            if (seedText !== "" && !/^-?\d+$/.test(seedText)) {
+                validationErrors.textContent = "Random seed must be a 32-bit integer, or left blank."; return;
+            }
+            const seed = seedText === "" ? null : Number(seedText);
+            if (seed !== null && (!Number.isSafeInteger(seed) || seed < -2147483648 || seed > 2147483647)) {
+                validationErrors.textContent = "Random seed must be between -2,147,483,648 and 2,147,483,647."; return;
+            }
+            activePending.tickLimit = Number(tickText);
+            activePending.randomSeed = seed;
+            pendingConfigs[modelSelect.value] = activePending;
+            connection.invoke("StartSimulation", activePending).catch(err => {
+                validationErrors.textContent = err.message || "Simulation settings are invalid.";
+            });
         });
 
         pauseButton.addEventListener("click", () => {
@@ -550,10 +642,12 @@
             try {
                 await connection.start();
                 const models = await connection.invoke("GetModels");
+                modelDefaults = await connection.invoke("GetModelDefaults");
                 modelSelect.innerHTML = models
                     .map(m => `<option value="${m.model}">${m.displayName}</option>`)
                     .join("");
                 if (currentRun) modelSelect.value = currentRun.model;
+                renderConfiguration(modelSelect.value);
                 updateDisplaySwitches();
             } catch (err) {
                 console.error(err);
