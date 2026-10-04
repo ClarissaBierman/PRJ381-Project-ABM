@@ -225,6 +225,7 @@ public sealed class SimulationEngine : ISimulationEngine
     private void CreateAntAgents()
     {
         var nest = (X: _config!.GridWidth / 2, Y: _config.GridHeight / 2);
+        _grid!.GetPatch(nest.X, nest.Y).SetProperty("nest", true);
 
         int minDistanceFromNest = Math.Min(3, Math.Min(_config.GridWidth, _config.GridHeight) / 4);
 
