@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace AbmFramework.Engine;
@@ -44,7 +45,10 @@ public static class MonteCarloCsvExporter
             foreach (var key in metricKeys)
             {
                 var value = stats.Metrics.TryGetValue(key, out var v) ? v : 0.0;
-                builder.Append(',').Append(value.ToString("F2"));
+                // Invariant culture so decimals always use '.', even on
+                // machines whose locale uses ',' (e.g. en-ZA), which would
+                // otherwise split each value across two CSV columns.
+                builder.Append(',').Append(value.ToString("F2", CultureInfo.InvariantCulture));
             }
 
             builder.AppendLine();

@@ -17,5 +17,11 @@ namespace ABM.Persistence.Models
         public int Infected { get; set; }
 
         public int Recovered { get; set; }
+
+        // Per-model metrics for non-SIR models (e.g. "HappyAgents" for
+        // Schelling). Used by CsvExporter; not stored in the TickRecords
+        // table yet, so records read back from the database have none.
+        public IReadOnlyDictionary<string, double> Metrics { get; set; } =
+            new Dictionary<string, double>();
     }
 }

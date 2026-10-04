@@ -252,6 +252,7 @@
             <button id="startButton" class="primary">Start</button>
             <button id="pauseButton" disabled>Pause</button>
             <button id="resetButton" disabled>Reset</button>
+            <button id="downloadButton" disabled>Download CSV</button>
             <div class="speed">
                 <label for="speedSlider">Speed:</label>
                 <span class="speed-end">Slow</span>
@@ -303,7 +304,7 @@
         </div>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
     <script src="js/grid.js"></script>
 
@@ -312,6 +313,7 @@
         const startButton = document.getElementById("startButton");
         const pauseButton = document.getElementById("pauseButton");
         const resetButton = document.getElementById("resetButton");
+        const downloadButton = document.getElementById("downloadButton");
         const modelTitle = document.getElementById("modelTitle");
         const modelDescription = document.getElementById("modelDescription");
         const statusBadge = document.getElementById("statusBadge");
@@ -339,7 +341,6 @@
         let currentRun = null;
         let currentStatus = "Stopped";
 
-        const maxPoints = 500;
         const seriesColors = [
             "rgba(54,162,235,1)", "rgba(255,99,132,1)", "rgba(75,192,192,1)",
             "rgba(255,193,7,1)", "rgba(155,89,182,1)", "rgba(23,162,184,1)"
@@ -350,7 +351,12 @@
         };
         const sirKeys = ["Susceptible", "Infected", "Recovered"];
 
-        const chartData = { labels: [], datasets: [] };
+        // Every tick of the run is kept as an {x, y} point. Once a series has
+        // more points than the chart has pixels, Chart.js's decimation plugin
+        // thins them at draw time (LTTB keeps the curve's shape and peaks),
+        // so a long run stays fully visible without slowing the chart down.
+        // Decimation requires parsing: false and a linear x axis.
+        const chartData = { datasets: [] };
         const statsChart = new Chart(document.getElementById("statsChart").getContext("2d"), {
             type: "line",
             data: chartData,
@@ -358,8 +364,12 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
+                parsing: false,
+                plugins: {
+                    decimation: { enabled: true, algorithm: "lttb" }
+                },
                 scales: {
-                    x: { title: { display: true, text: "Tick" } },
+                    x: { type: "linear", title: { display: true, text: "Tick" }, ticks: { precision: 0 } },
                     y: { title: { display: true, text: "Count" }, beginAtZero: true },
                     y1: {
                         position: "right",
@@ -372,12 +382,14 @@
                 }
             }
         });
-        let datasetIndexByKey = {};
+        // Holds each series' full point array. Once decimation kicks in,
+        // Chart.js swaps dataset.data for the thinned copy, so new points must
+        // be pushed onto these original arrays rather than onto dataset.data.
+        let pointsByKey = {};
 
         function resetChart() {
-            chartData.labels.length = 0;
             chartData.datasets.length = 0;
-            datasetIndexByKey = {};
+            pointsByKey = {};
             statsChart.options.scales.y1.display = false;
             statsChart.update("none");
         }
@@ -387,45 +399,35 @@
         }
 
         function ensureSeries(key) {
-            if (key in datasetIndexByKey) return datasetIndexByKey[key];
+            if (key in pointsByKey) return pointsByKey[key];
 
             const isFraction = key.includes("Fraction");
             if (isFraction) statsChart.options.scales.y1.display = true;
 
             const color = modelMetricColors[key] || seriesColors[chartData.datasets.length % seriesColors.length];
+            const points = [];
             chartData.datasets.push({
                 label: prettyLabel(key),
                 borderColor: color,
                 backgroundColor: color.replace(",1)", ",0.1)"),
-                data: new Array(chartData.labels.length).fill(null),
+                data: points,
                 tension: 0.2,
                 pointRadius: 0,
                 yAxisID: isFraction ? "y1" : "y"
             });
-            datasetIndexByKey[key] = chartData.datasets.length - 1;
-            return datasetIndexByKey[key];
+            pointsByKey[key] = points;
+            return points;
         }
 
         function addTick(tick) {
-            chartData.labels.push(tick.tick);
-
             const values = currentRun && currentRun.model === "SIR"
                 ? { Susceptible: tick.susceptible, Infected: tick.infected, Recovered: tick.recovered }
                 : {};
             Object.assign(values, tick.metrics || {});
 
             Object.entries(values).forEach(([key, value]) => {
-                chartData.datasets[ensureSeries(key)].data.push(value);
+                ensureSeries(key).push({ x: tick.tick, y: value });
             });
-
-            chartData.datasets.forEach(ds => {
-                if (ds.data.length < chartData.labels.length) ds.data.push(null);
-            });
-
-            if (chartData.labels.length > maxPoints) {
-                chartData.labels.shift();
-                chartData.datasets.forEach(ds => ds.data.shift());
-            }
 
             statsChart.update("none");
         }
@@ -450,6 +452,7 @@
             tickCounter.textContent = `Tick 0 / ${run.tickLimit}`;
             document.title = run.displayName + " - ABM Framework Dashboard";
             modelSelect.value = run.model;
+            downloadButton.disabled = false;
             resetChart();
             setGridSize(run.gridWidth, run.gridHeight);
             updateDisplaySwitches();
@@ -457,6 +460,7 @@
 
         function showNoRun() {
             currentRun = null;
+            downloadButton.disabled = true;
             modelTitle.textContent = "No simulation running";
             modelDescription.textContent = "Pick a model and press Start.";
             chartTitle.textContent = "Statistics";
@@ -533,6 +537,27 @@
 
         resetButton.addEventListener("click", () => {
             connection.invoke("ResetSimulation").catch(err => console.error(err));
+        });
+
+        // Fetches the file rather than navigating to it, so a failed download
+        // shows a message instead of replacing the dashboard with an error page.
+        downloadButton.addEventListener("click", async () => {
+            if (!currentRun) return;
+            try {
+                const response = await fetch(`api/simulation/ticks.csv?runId=${currentRun.runId}`);
+                if (!response.ok) throw new Error(await response.text() || response.statusText);
+
+                const disposition = response.headers.get("Content-Disposition") || "";
+                const match = disposition.match(/filename="?([^";]+)"?/);
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(await response.blob());
+                link.download = match ? match[1] : "simulation-ticks.csv";
+                link.click();
+                URL.revokeObjectURL(link.href);
+            } catch (err) {
+                console.error(err);
+                alert("Could not download the CSV: " + err.message);
+            }
         });
 
         speedSlider.addEventListener("input", () => {
