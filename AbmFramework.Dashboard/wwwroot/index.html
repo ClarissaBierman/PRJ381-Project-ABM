@@ -171,6 +171,65 @@
 
         .swatch.square { border-radius: 2px; }
 
+        .display-switches {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 18px;
+            margin-top: 12px;
+            font-size: 13px;
+            max-width: 480px;
+        }
+
+        .display-switches.none { display: none; }
+
+        .switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .switch[hidden] { display: none; }
+
+        .switch input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .switch .slider {
+            position: relative;
+            width: 34px;
+            height: 18px;
+            border-radius: 9px;
+            background: #c4c4c4;
+            transition: background 0.15s;
+            flex-shrink: 0;
+        }
+
+        .switch .slider::after {
+            content: "";
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: white;
+            transition: transform 0.15s;
+        }
+
+        .switch input:checked + .slider { background: #2e6be6; }
+        .switch input:checked + .slider::after { transform: translateX(16px); }
+        .switch input:focus-visible + .slider { outline: 2px solid #2e6be6; outline-offset: 2px; }
+
+        .switch-hint {
+            color: #777;
+            font-style: italic;
+        }
+
         .chart-panel {
             flex: 1;
             min-width: 420px;
@@ -214,6 +273,25 @@
                 <h3>Grid</h3>
                 <canvas id="grid"></canvas>
                 <div id="legend"></div>
+                <div id="displaySwitches" class="display-switches">
+                    <label class="switch" data-models="AntForaging">
+                        <input type="checkbox" id="showPheromone" data-option="showPheromone" checked />
+                        <span class="slider"></span> Show pheromone trails
+                    </label>
+                    <label class="switch" data-models="AntForaging">
+                        <input type="checkbox" id="showFood" data-option="showFood" checked />
+                        <span class="slider"></span> Show food and nest
+                    </label>
+                    <label class="switch" data-models="WolfSheep">
+                        <input type="checkbox" id="showGrass" data-option="showGrass" checked />
+                        <span class="slider"></span> Show grass
+                    </label>
+                    <label class="switch" data-models="WolfSheep">
+                        <input type="checkbox" id="showEnergy" data-option="showEnergy" />
+                        <span class="slider"></span> Show energy
+                    </label>
+                    <span id="energyHint" class="switch-hint" hidden>Grid too big to fit energy labels.</span>
+                </div>
             </div>
 
             <div class="panel chart-panel">
@@ -374,6 +452,7 @@
             modelSelect.value = run.model;
             resetChart();
             setGridSize(run.gridWidth, run.gridHeight);
+            updateDisplaySwitches();
         }
 
         function showNoRun() {
@@ -385,7 +464,38 @@
             document.title = "ABM Framework Dashboard";
             resetChart();
             clearGrid();
+            updateDisplaySwitches();
         }
+
+        // Display switches only change how the grid is drawn, so they apply
+        // instantly (even while paused) and never touch the server.
+        const displaySwitches = document.getElementById("displaySwitches");
+        const energyHint = document.getElementById("energyHint");
+
+        function updateDisplaySwitches() {
+            const model = currentRun ? currentRun.model : modelSelect.value;
+            let anyVisible = false;
+            displaySwitches.querySelectorAll(".switch").forEach(sw => {
+                const visible = sw.dataset.models.split(",").includes(model);
+                sw.hidden = !visible;
+                anyVisible = anyVisible || visible;
+            });
+            displaySwitches.classList.toggle("none", !anyVisible);
+            energyHint.hidden = !(model === "WolfSheep" && displayOptions.showEnergy && cellSize < minLabelCellSize);
+        }
+
+        displaySwitches.querySelectorAll("input[data-option]").forEach(input => {
+            displayOptions[input.dataset.option] = input.checked;
+            input.addEventListener("change", () => {
+                displayOptions[input.dataset.option] = input.checked;
+                updateDisplaySwitches();
+                redrawGrid();
+            });
+        });
+
+        modelSelect.addEventListener("change", () => {
+            if (!currentRun) updateDisplaySwitches();
+        });
 
         const connection = new signalR.HubConnectionBuilder()
             .withUrl("/simulationHub")
@@ -409,7 +519,7 @@
 
         connection.on("ReceiveGrid", grid => {
             if (!currentRun || grid.runId !== currentRun.runId) return;
-            drawAgents(grid.agents, grid.grassPatches);
+            drawGrid(grid);
         });
 
         startButton.addEventListener("click", () => {
@@ -444,6 +554,7 @@
                     .map(m => `<option value="${m.model}">${m.displayName}</option>`)
                     .join("");
                 if (currentRun) modelSelect.value = currentRun.model;
+                updateDisplaySwitches();
             } catch (err) {
                 console.error(err);
                 modelDescription.textContent = "Could not connect to the simulation server.";

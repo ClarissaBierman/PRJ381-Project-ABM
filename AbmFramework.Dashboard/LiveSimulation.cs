@@ -1,3 +1,4 @@
+using ABM.Core;
 using AbmFramework.Config;
 using AbmFramework.Dashboard.Hubs;
 using AbmFramework.Dashboard.Models;
@@ -178,24 +179,66 @@ public class LiveSimulationService
             Metrics = stats.Metrics
         };
 
-        var snapshot = engine.GetSnapshot();
+        var grid = BuildGridData(engine.GetSnapshot(), runId);
+
+        _ = BroadcastAsync(tick, grid, token);
+    }
+
+    private static GridData BuildGridData(SimulationSnapshot snapshot, int runId)
+    {
         var grid = new GridData
         {
             RunId = runId,
+            HasGrass = snapshot.Configuration.Model == ModelType.WolfSheep,
             Agents = snapshot.Agents.Select(a => new AgentDTO
             {
                 Id = a.Id,
                 X = a.Position.X,
                 Y = a.Position.Y,
-                State = a.DisplayState
-            }).ToList(),
-            GrassPatches = snapshot.Grid.AllPatches()
-                .Where(p => p.GetProperty("grass") is true)
-                .Select(p => new PatchDTO { X = p.X, Y = p.Y })
-                .ToList()
+                State = a.DisplayState,
+                Energy = a switch
+                {
+                    SheepAgent sheep => Math.Round(sheep.Energy, 1),
+                    WolfAgent wolf => Math.Round(wolf.Energy, 1),
+                    _ => null
+                }
+            }).ToList()
         };
 
-        _ = BroadcastAsync(tick, grid, token);
+        foreach (var patch in snapshot.Grid.AllPatches())
+        {
+            var dto = ToPatchDTO(patch);
+            if (dto is not null)
+            {
+                grid.Patches.Add(dto);
+            }
+        }
+
+        return grid;
+    }
+
+    // Returns null for a patch with nothing worth colouring.
+    private static PatchDTO? ToPatchDTO(Patch patch)
+    {
+        var food = patch.GetProperty("food") is int f ? f : 0;
+        var pheromone = patch.GetProperty("pheromone") is double p ? Math.Round(p, 2) : 0.0;
+        var nest = patch.GetProperty("nest") is true;
+        var eaten = patch.GetProperty("grass") is false;
+
+        if (food <= 0 && pheromone <= 0 && !nest && !eaten)
+        {
+            return null;
+        }
+
+        return new PatchDTO
+        {
+            X = patch.X,
+            Y = patch.Y,
+            Food = Math.Max(food, 0),
+            Pheromone = Math.Max(pheromone, 0),
+            Nest = nest,
+            Grass = eaten ? false : null
+        };
     }
 
     private async Task BroadcastAsync(TickData tick, GridData grid, CancellationToken token)
