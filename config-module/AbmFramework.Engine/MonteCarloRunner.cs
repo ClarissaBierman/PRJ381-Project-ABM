@@ -20,7 +20,8 @@ public sealed class MonteCarloRunner
         SimulationConfig baseConfig,
         int replicateCount,
         int? baseSeed = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<int>? progress = null)
     {
         if (replicateCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(replicateCount), "replicateCount must be positive.");
@@ -50,6 +51,11 @@ public sealed class MonteCarloRunner
                 FinalStatistics = history[^1],
                 History = history
             });
+
+            // Reports how many replicates have finished so far, so a caller
+            // (e.g. the dashboard's Compare progress bar) can show
+            // "Run 7 of 20" without waiting for the whole batch.
+            progress?.Report(results.Count);
         }
 
         return results;
