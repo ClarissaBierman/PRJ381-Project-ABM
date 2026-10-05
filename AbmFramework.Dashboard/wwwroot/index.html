@@ -6,43 +6,100 @@
     <title>ABM Framework Dashboard</title>
     <link rel="stylesheet" href="css/compare.css" />
     <style>
+        * { box-sizing: border-box; }
+
+        html, body { height: 100%; }
+
         body {
             font-family: Arial, Helvetica, sans-serif;
             margin: 0;
             background: #f5f5f5;
             color: #222;
+            display: flex;
+            flex-direction: column;
         }
 
         header {
             background: #1f2a44;
             color: white;
-            padding: 16px 24px;
+            padding: 10px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px 28px;
+            flex-shrink: 0;
         }
 
         header h1 {
             margin: 0;
-            font-size: 22px;
-        }
-
-        main {
-            padding: 20px 24px;
+            font-size: 19px;
+            white-space: nowrap;
         }
 
         .controls {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
+            gap: 8px;
         }
 
         .controls label {
             font-weight: bold;
         }
 
+        main {
+            --left: 290px;
+            --middle: minmax(0, 1fr);
+            flex: 1;
+            min-height: 0;
+            display: grid;
+            grid-template-columns: var(--left) 14px var(--middle) 14px minmax(280px, 1fr);
+            padding: 16px 20px;
+        }
+
+        .gutter {
+            position: relative;
+            cursor: col-resize;
+            touch-action: none;
+        }
+
+        .gutter.horizontal {
+            flex-shrink: 0;
+            height: 14px;
+            margin: -6px 0;
+            cursor: row-resize;
+        }
+
+        .gutter::after {
+            content: "";
+            position: absolute;
+            border-radius: 3px;
+            background: #c9cfdb;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+
+        .gutter:not(.horizontal)::after { top: 0; bottom: 0; left: 5px; width: 4px; }
+        .gutter.horizontal::after { left: 0; right: 0; top: 5px; height: 4px; }
+        .gutter:hover::after, .gutter.dragging::after { opacity: 1; background: #2e6be6; }
+
+        body.resizing { user-select: none; }
+        body.resizing.cols { cursor: col-resize; }
+        body.resizing.rows { cursor: row-resize; }
+
+        .column {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 0;
+            min-width: 0;
+        }
+
+        .sidebar { overflow-y: auto; }
+
         select, button {
-            font-size: 15px;
-            padding: 7px 12px;
+            font-size: 14px;
+            padding: 6px 12px;
             border-radius: 6px;
             border: 1px solid #b0b0b0;
             background: white;
@@ -68,44 +125,44 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-left: 16px;
+            margin-left: 12px;
         }
 
         .speed-end {
-            font-size: 13px;
-            color: #777;
+            font-size: 12px;
+            color: #b8c2d8;
         }
 
         #speedSlider {
-            width: 160px;
+            width: 130px;
         }
 
         #speedLabel {
-            font-size: 14px;
-            color: #555;
+            font-size: 13px;
+            color: #dfe5f2;
             min-width: 90px;
         }
 
-        .parameter-panel { margin: 0 0 20px; max-width: 900px; }
-        #parameterControls { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px 20px; }
-        .parameter-control { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; }
-        .parameter-control input[type="range"] { grid-column: 1 / -1; width: 100%; }
+        #parameterControls { display: grid; grid-template-columns: 1fr; gap: 8px; }
+        .parameter-control { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; font-size: 13px; }
+        .parameter-control input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 2px 0; }
         .parameter-control output { color: #555; font-variant-numeric: tabular-nums; }
-        .run-options { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 16px; }
-        .run-options label { display: flex; flex-direction: column; gap: 5px; font-weight: bold; }
-        .run-options input { width: 150px; padding: 7px; border: 1px solid #b0b0b0; border-radius: 6px; font-size: 15px; }
-        #validationErrors { color: #a52834; white-space: pre-line; font-weight: bold; margin: 12px 0 0; }
+        .run-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+        .run-options label { display: flex; flex-direction: column; gap: 4px; font-weight: bold; font-size: 12px; }
+        .run-options input { width: 100%; padding: 6px; border: 1px solid #b0b0b0; border-radius: 6px; font-size: 14px; }
+        #validationErrors { color: #a52834; white-space: pre-line; font-weight: bold; font-size: 13px; margin: 10px 0 0; }
+        #validationErrors:empty { display: none; }
 
         .model-heading {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 12px;
+            gap: 6px 12px;
         }
 
         .model-heading h2 {
             margin: 0;
-            font-size: 24px;
+            font-size: 20px;
         }
 
         .status {
@@ -123,14 +180,15 @@
         .status.Error { background: #f8d7da; color: #a52834; }
 
         .tick {
-            font-size: 15px;
+            font-size: 14px;
             color: #555;
+            font-variant-numeric: tabular-nums;
         }
 
         #modelDescription {
-            margin: 8px 0 20px;
+            margin: 4px 0 0;
             color: #555;
-            max-width: 900px;
+            font-size: 13px;
         }
 
         .panels {
@@ -143,16 +201,32 @@
         .panel {
             background: white;
             border-radius: 10px;
-            padding: 16px 20px;
+            padding: 14px 16px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.12);
         }
 
         .panel h3 {
-            margin: 0 0 12px;
-            font-size: 16px;
+            margin: 0 0 10px;
+            font-size: 15px;
+        }
+
+        .grid-panel {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .grid-box {
+            position: relative;
+            flex: 1;
+            min-height: 200px;
         }
 
         #grid {
+            position: absolute;
+            inset: 0;
+            margin: auto;
             display: block;
             border: 1px solid #888;
             background: white;
@@ -161,11 +235,12 @@
         #legend {
             display: flex;
             flex-wrap: wrap;
-            gap: 14px;
-            margin-top: 12px;
+            gap: 6px 14px;
+            margin-top: 10px;
             font-size: 13px;
-            max-width: 480px;
         }
+
+        #legend:empty { display: none; }
 
         .legend-item {
             display: inline-flex;
@@ -182,13 +257,111 @@
 
         .swatch.square { border-radius: 2px; }
 
+        .legend-icon {
+            width: 18px;
+            height: 18px;
+        }
+
+        .monitors {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .monitors:empty { display: none; }
+
+        .monitor {
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            border-top: 4px solid #2e6be6;
+            padding: 6px 12px;
+            min-width: 90px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        .monitor-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .monitor-value {
+            font-size: 22px;
+            font-weight: bold;
+            font-variant-numeric: tabular-nums;
+            margin-top: 2px;
+        }
+
+        #grid { cursor: pointer; }
+
+        .inspector-panel {
+            flex-shrink: 0;
+            min-height: 110px;
+            height: var(--inspector-height, auto);
+            overflow-y: auto;
+        }
+
+        .inspect-hint {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .inspect-hint[hidden] { display: none; }
+
+        .inspector {
+            position: relative;
+            border: 1px solid #ddd;
+            border-left: 5px solid #999;
+            border-radius: 8px;
+            padding: 10px 14px;
+            background: #fafafa;
+            font-size: 14px;
+        }
+
+        .inspector[hidden] { display: none; }
+
+        .inspector h4 {
+            margin: 0 0 6px;
+            font-size: 15px;
+        }
+
+        .inspector dl {
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            gap: 3px 14px;
+            margin: 0;
+        }
+
+        .inspector dt { color: #666; }
+        .inspector dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+        .inspector .inspector-note {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .inspector-close {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            min-width: 0;
+            padding: 0 7px;
+            font-size: 16px;
+            line-height: 22px;
+            border: none;
+            background: transparent;
+            color: #777;
+        }
+
         .display-switches {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px 18px;
-            margin-top: 12px;
+            gap: 8px 18px;
+            margin-top: 10px;
             font-size: 13px;
-            max-width: 480px;
         }
 
         .display-switches.none { display: none; }
@@ -243,20 +416,31 @@
 
         .chart-panel {
             flex: 1;
-            min-width: 420px;
+            min-height: 220px;
+            display: flex;
+            flex-direction: column;
         }
 
         .chart-wrap {
-            height: 420px;
+            position: relative;
+            flex: 1;
+            min-height: 0;
+        }
+
+        @media (max-width: 1100px), (max-height: 560px) {
+            body { display: block; height: auto; }
+            main { display: flex; flex-direction: column; }
+            .grid-box { flex: none; height: min(90vw, 560px); }
+            .chart-panel { flex: none; }
+            .chart-wrap { flex: none; height: 360px; }
+            .gutter { display: none; }
+            .inspector-panel { height: auto; }
         }
     </style>
 </head>
 <body>
     <header>
         <h1>ABM Framework Dashboard</h1>
-    </header>
-
-    <main>
         <div class="controls">
             <label for="modelSelect">Model:</label>
             <select id="modelSelect"></select>
@@ -272,32 +456,41 @@
                 <span id="speedLabel"></span>
             </div>
         </div>
+    </header>
 
-        <div class="panel parameter-panel">
-            <h3>Simulation settings</h3>
-            <div id="parameterControls"></div>
-            <div class="run-options">
-                <label for="tickLimit">Run length (ticks)
-                    <input id="tickLimit" type="number" min="1" max="1000000" step="1" />
-                </label>
-                <label for="randomSeed">Random seed (optional)
-                    <input id="randomSeed" type="number" step="1" placeholder="No seed" />
-                </label>
+    <main>
+        <aside class="column sidebar">
+            <div class="panel parameter-panel">
+                <h3>Simulation settings</h3>
+                <div id="parameterControls"></div>
+                <div class="run-options">
+                    <label for="tickLimit">Run length (ticks)
+                        <input id="tickLimit" type="number" min="1" max="1000000" step="1" />
+                    </label>
+                    <label for="randomSeed">Random seed
+                        <input id="randomSeed" type="number" step="1" placeholder="No seed" />
+                    </label>
+                </div>
+                <div id="validationErrors" role="alert" aria-live="polite"></div>
             </div>
-            <div id="validationErrors" role="alert" aria-live="polite"></div>
-        </div>
+        </aside>
 
-        <div class="model-heading">
-            <h2 id="modelTitle">No simulation running</h2>
-            <span id="statusBadge" class="status">Stopped</span>
-            <span id="tickCounter" class="tick"></span>
-        </div>
-        <p id="modelDescription">Pick a model and press Start.</p>
+        <div class="gutter" data-resize="left" title="Drag to resize. Double-click to reset."></div>
 
-        <div class="panels">
-            <div class="panel">
-                <h3>Grid</h3>
-                <canvas id="grid"></canvas>
+        <section class="column">
+            <div>
+                <div class="model-heading">
+                    <h2 id="modelTitle">No simulation running</h2>
+                    <span id="statusBadge" class="status">Stopped</span>
+                    <span id="tickCounter" class="tick"></span>
+                </div>
+                <p id="modelDescription">Pick a model and press Start.</p>
+            </div>
+
+            <div class="panel grid-panel">
+                <div id="gridBox" class="grid-box">
+                    <canvas id="grid"></canvas>
+                </div>
                 <div id="legend"></div>
                 <div id="displaySwitches" class="display-switches">
                     <label class="switch" data-models="AntForaging">
@@ -319,6 +512,12 @@
                     <span id="energyHint" class="switch-hint" hidden>Grid too big to fit energy labels.</span>
                 </div>
             </div>
+        </section>
+
+        <div class="gutter" data-resize="middle" title="Drag to resize. Double-click to reset."></div>
+
+        <section class="column" id="rightColumn">
+            <div id="monitors" class="monitors"></div>
 
             <div class="panel chart-panel">
                 <h3 id="chartTitle">Statistics</h3>
@@ -326,7 +525,15 @@
                     <canvas id="statsChart"></canvas>
                 </div>
             </div>
-        </div>
+
+            <div class="gutter horizontal" data-resize="inspector" title="Drag to resize. Double-click to reset."></div>
+
+            <div class="panel inspector-panel" id="inspectorPanel">
+                <h3>Agent inspector</h3>
+                <div id="inspectHint" class="inspect-hint">Click an agent on the grid to see its details.</div>
+                <div id="inspector" class="inspector" hidden></div>
+            </div>
+        </section>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -495,11 +702,47 @@
             return points;
         }
 
+        const monitorsEl = document.getElementById("monitors");
+        let monitorValues = {};
+
+        function resetMonitors() {
+            monitorsEl.innerHTML = "";
+            monitorValues = {};
+        }
+
+        function monitorLabel(key) {
+            return key.endsWith("Fraction") ? prettyLabel(key.slice(0, -"Fraction".length)) + " %" : prettyLabel(key);
+        }
+
+        function formatMonitor(key, value) {
+            if (key.endsWith("Fraction")) return (value * 100).toFixed(1) + "%";
+            return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
+        }
+
+        function setMonitor(key, value) {
+            if (!(key in monitorValues)) {
+                const box = document.createElement("div");
+                box.className = "monitor";
+                const color = modelMetricColors[key] || seriesColors[(Object.keys(monitorValues).length - 1 + seriesColors.length) % seriesColors.length];
+                box.style.borderTopColor = key === "Tick" ? "#888" : color;
+                box.innerHTML = `<div class="monitor-label">${monitorLabel(key)}</div><div class="monitor-value"></div>`;
+                monitorsEl.appendChild(box);
+                monitorValues[key] = box.querySelector(".monitor-value");
+            }
+            monitorValues[key].textContent = formatMonitor(key, value);
+        }
+
+        function updateMonitors(tickNumber, values) {
+            setMonitor("Tick", tickNumber);
+            Object.entries(values).forEach(([key, value]) => setMonitor(key, value));
+        }
+
         function addTick(tick) {
             const values = currentRun && currentRun.model === "SIR"
                 ? { Susceptible: tick.susceptible, Infected: tick.infected, Recovered: tick.recovered }
                 : {};
             Object.assign(values, tick.metrics || {});
+            updateMonitors(tick.tick + 1, values);
 
             Object.entries(values).forEach(([key, value]) => {
                 ensureSeries(key).push({ x: tick.tick, y: value });
@@ -530,6 +773,8 @@
             modelSelect.value = run.model;
             downloadButton.disabled = false;
             resetChart();
+            resetMonitors();
+            hideInspector();
             setGridSize(run.gridWidth, run.gridHeight);
             updateDisplaySwitches();
         }
@@ -543,7 +788,9 @@
             tickCounter.textContent = "";
             document.title = "ABM Framework Dashboard";
             resetChart();
+            resetMonitors();
             clearGrid();
+            hideInspector();
             updateDisplaySwitches();
         }
 
@@ -576,6 +823,189 @@
         modelSelect.addEventListener("change", () => {
             renderConfiguration(modelSelect.value);
             if (!currentRun) updateDisplaySwitches();
+        });
+
+        const inspector = document.getElementById("inspector");
+
+        const agentTypes = {
+            person: "Person",
+            happy: "Resident",
+            unhappy: "Resident",
+            boid: "Boid",
+            ant: "Ant",
+            antWithFood: "Ant",
+            sheep: "Sheep",
+            wolf: "Wolf"
+        };
+
+        function compass(heading) {
+            const degrees = (heading * 180 / Math.PI + 90 + 360) % 360;
+            const points = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+            return `${Math.round(degrees)}° (${points[Math.round(degrees / 45) % 8]})`;
+        }
+
+        const inspectHint = document.getElementById("inspectHint");
+
+        function hideInspector() {
+            inspector.hidden = true;
+            inspector.innerHTML = "";
+            inspectHint.hidden = false;
+        }
+
+        function showInspector(html, color) {
+            inspector.innerHTML = html;
+            inspector.style.borderLeftColor = color;
+            inspector.hidden = false;
+            inspectHint.hidden = true;
+        }
+
+        function closeInspector() {
+            selectAgent(null);
+            hideInspector();
+        }
+
+        function renderInspector() {
+            if (selectedAgentId === null) {
+                hideInspector();
+                return;
+            }
+
+            const a = selectedAgent();
+            const closeButton = `<button class="inspector-close" title="Close" onclick="closeInspector()">&times;</button>`;
+
+            if (!a) {
+                showInspector(`${closeButton}<h4>Agent #${selectedAgentId}</h4>
+                    <div>This agent is no longer in the simulation.</div>`, "#999");
+                return;
+            }
+
+            const style = styleFor(a.state);
+            const rows = [
+                ["Type", agentTypes[style.icon] || "Agent"],
+                ["State", style.label],
+                ["Position", `(${a.x}, ${a.y})`]
+            ];
+            if (typeof a.energy === "number") rows.push(["Energy", a.energy.toFixed(1)]);
+            if (typeof a.heading === "number") rows.push(["Heading", compass(a.heading)]);
+            if (typeof a.speed === "number") rows.push(["Speed", `${a.speed.toFixed(2)} cells/tick`]);
+
+            const others = agentsAtCell(a.x, a.y).length - 1;
+            const note = others > 0
+                ? `<div class="inspector-note">${others} other agent${others === 1 ? "" : "s"} in this cell. Click it again to see the next one.</div>`
+                : "";
+
+            showInspector(`${closeButton}<h4>Agent #${a.id}</h4>
+                <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>${note}`, style.color);
+        }
+
+        const layout = (() => {
+            const main = document.querySelector("main");
+            const rightColumn = document.getElementById("rightColumn");
+            const inspectorPanel = document.getElementById("inspectorPanel");
+            const storageKey = "abmDashboardLayout";
+            let sizes = {};
+
+            try { sizes = JSON.parse(localStorage.getItem(storageKey)) || {}; } catch { sizes = {}; }
+
+            function save() {
+                try { localStorage.setItem(storageKey, JSON.stringify(sizes)); } catch { }
+            }
+
+            function clamp(value, min, max) {
+                return Math.max(min, Math.min(max, value));
+            }
+
+            function apply() {
+                const inner = main.clientWidth - 40 - 28;
+                if (sizes.left) sizes.left = clamp(sizes.left, 220, Math.max(220, inner - 560));
+                if (sizes.middle) sizes.middle = clamp(sizes.middle, 280, Math.max(280, inner - (sizes.left || 290) - 280));
+
+                main.style.setProperty("--left", sizes.left ? `${sizes.left}px` : "");
+                main.style.setProperty("--middle", sizes.middle ? `${sizes.middle}px` : "");
+                if (!sizes.left) main.style.removeProperty("--left");
+                if (!sizes.middle) main.style.removeProperty("--middle");
+
+                if (sizes.inspector) {
+                    sizes.inspector = clamp(sizes.inspector, 110, Math.max(110, rightColumn.clientHeight - 260));
+                    inspectorPanel.style.setProperty("--inspector-height", `${sizes.inspector}px`);
+                } else {
+                    inspectorPanel.style.removeProperty("--inspector-height");
+                }
+            }
+
+            function startDrag(gutter, event) {
+                const which = gutter.dataset.resize;
+                const columns = gutter.previousElementSibling.getBoundingClientRect();
+                const grabX = event.clientX - columns.right;
+                const grabY = rightColumn.getBoundingClientRect().bottom - event.clientY - inspectorPanel.offsetHeight;
+                event.preventDefault();
+                gutter.setPointerCapture(event.pointerId);
+                gutter.classList.add("dragging");
+                document.body.classList.add("resizing", which === "inspector" ? "rows" : "cols");
+
+                const move = e => {
+                    if (which === "inspector") {
+                        sizes.inspector = rightColumn.getBoundingClientRect().bottom - e.clientY - grabY;
+                    } else {
+                        sizes[which] = e.clientX - columns.left - grabX;
+                    }
+                    apply();
+                };
+
+                const stop = () => {
+                    gutter.classList.remove("dragging");
+                    document.body.classList.remove("resizing", "rows", "cols");
+                    gutter.removeEventListener("pointermove", move);
+                    gutter.removeEventListener("pointerup", stop);
+                    gutter.removeEventListener("pointercancel", stop);
+                    save();
+                };
+
+                gutter.addEventListener("pointermove", move);
+                gutter.addEventListener("pointerup", stop);
+                gutter.addEventListener("pointercancel", stop);
+            }
+
+            document.querySelectorAll(".gutter").forEach(gutter => {
+                gutter.addEventListener("pointerdown", e => startDrag(gutter, e));
+                gutter.addEventListener("dblclick", () => {
+                    delete sizes[gutter.dataset.resize];
+                    apply();
+                    save();
+                });
+            });
+
+            window.addEventListener("resize", apply);
+            apply();
+            return { apply };
+        })();
+
+        const gridBox = document.getElementById("gridBox");
+
+        function fitGrid() {
+            fitGridTo(Math.min(gridBox.clientWidth, gridBox.clientHeight) - 2);
+        }
+
+        new ResizeObserver(fitGrid).observe(gridBox);
+
+        function onGridDrawn() {
+            renderInspector();
+        }
+
+        canvas.addEventListener("click", event => {
+            if (!lastGrid) return;
+
+            const cell = cellFromEvent(event);
+            const here = agentsAtCell(cell.x, cell.y);
+
+            if (here.length === 0) {
+                closeInspector();
+                return;
+            }
+
+            const current = here.findIndex(a => a.id === selectedAgentId);
+            const next = here[(current + 1) % here.length];
+            selectAgent(next.id);
         });
 
         const connection = new signalR.HubConnectionBuilder()

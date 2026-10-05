@@ -15,4 +15,12 @@ public class AgentDTO
     // Wolf-Sheep only; left out of the message for agents without energy.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? Energy { get; set; }
+
+    // Boids only: direction of travel in radians (0 = right, clockwise on screen).
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? Heading { get; set; }
+
+    // Boids only: cells moved per tick.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? Speed { get; set; }
 }

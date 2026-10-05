@@ -216,7 +216,9 @@ public class LiveSimulationService
                     SheepAgent sheep => Math.Round(sheep.Energy, 1),
                     WolfAgent wolf => Math.Round(wolf.Energy, 1),
                     _ => null
-                }
+                },
+                Heading = a is BoidAgent boid ? Math.Round(Math.Atan2(boid.VY, boid.VX), 3) : null,
+                Speed = a is BoidAgent b ? Math.Round(Math.Sqrt(b.VX * b.VX + b.VY * b.VY), 2) : null
             }).ToList()
         };
 
