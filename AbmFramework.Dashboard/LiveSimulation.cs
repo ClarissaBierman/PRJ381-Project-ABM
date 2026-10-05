@@ -24,6 +24,7 @@ public class LiveSimulationService
     // by download requests, so access to the list is locked on the list.
     private sealed record ActiveRun(RunInfo Info, List<TickStatistics> Ticks);
     private ActiveRun? _activeRun;
+    private GridData? _lastGrid;
 
     public const int MinTickDelayMs = 10;
     public const int MaxTickDelayMs = 1000;
@@ -31,6 +32,7 @@ public class LiveSimulationService
     public RunInfo? CurrentRun => _activeRun?.Info;
     public string Status { get; private set; } = "Stopped";
     public int TickDelayMs { get; private set; } = 50;
+    public GridData? LastGrid => _lastGrid;
 
     public LiveSimulationService(IHubContext<SimulationHub> hubContext, ILogger<LiveSimulationService> logger)
     {
@@ -38,7 +40,9 @@ public class LiveSimulationService
         _logger = logger;
     }
 
-    public async Task StartAsync(SimulationConfig config)
+    // startPaused is the dashboard's Setup button: agents are created and drawn
+    // at tick 0, then the run waits for Go or Go once.
+    public async Task StartAsync(SimulationConfig config, bool startPaused = false)
     {
         ConfigLoader.Validate(config);
         await _lock.WaitAsync();
@@ -60,8 +64,15 @@ public class LiveSimulationService
             };
 
             var activeRun = new ActiveRun(run, new List<TickStatistics>());
-            var engine = new SimulationEngine { TickDelayMs = TickDelayMs };
+            var engine = new SimulationEngine { TickDelayMs = TickDelayMs, StartPaused = startPaused };
             var cts = new CancellationTokenSource();
+
+            engine.SimulationInitialised += (sender, e) =>
+            {
+                var grid = BuildGridData(engine.GetSnapshot(), run.RunId);
+                _lastGrid = grid;
+                _ = BroadcastGridAsync(grid, cts.Token);
+            };
 
             engine.TickCompleted += (sender, stats) => OnTick(engine, activeRun, stats, cts.Token);
             engine.SimulationCompleted += (sender, e) =>
@@ -75,9 +86,10 @@ public class LiveSimulationService
             _engine = engine;
             _cts = cts;
             _activeRun = activeRun;
+            _lastGrid = null;
 
             await _hubContext.Clients.All.SendAsync("SimulationStarted", run);
-            await SetStatusAsync("Running");
+            await SetStatusAsync(startPaused ? "Ready" : "Running");
 
             _runTask = Task.Run(() => RunAsync(engine, config, cts.Token));
         }
@@ -103,6 +115,17 @@ public class LiveSimulationService
         await SetStatusAsync("Running");
     }
 
+    public async Task StepAsync()
+    {
+        if (_engine is null || !_engine.IsPaused) return;
+
+        _engine.Step();
+        if (Status == "Ready")
+        {
+            await SetStatusAsync("Paused");
+        }
+    }
+
     public async Task SetSpeedAsync(int tickDelayMs)
     {
         TickDelayMs = Math.Clamp(tickDelayMs, MinTickDelayMs, MaxTickDelayMs);
@@ -123,6 +146,7 @@ public class LiveSimulationService
         {
             await StopCurrentAsync();
             _activeRun = null;
+            _lastGrid = null;
 
             await _hubContext.Clients.All.SendAsync("SimulationReset");
             await SetStatusAsync("Stopped");
@@ -195,6 +219,7 @@ public class LiveSimulationService
         };
 
         var grid = BuildGridData(engine.GetSnapshot(), runId);
+        _lastGrid = grid;
 
         _ = BroadcastAsync(tick, grid, token);
     }
@@ -284,6 +309,21 @@ public class LiveSimulationService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to broadcast tick {Tick}", tick.Tick);
+        }
+    }
+
+    private async Task BroadcastGridAsync(GridData grid, CancellationToken token)
+    {
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("ReceiveGrid", grid, token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast the starting grid");
         }
     }
 

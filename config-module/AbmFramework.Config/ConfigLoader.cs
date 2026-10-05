@@ -6,6 +6,8 @@ namespace AbmFramework.Config;
 
 public static class ConfigLoader
 {
+    public const int MaxGridSize = 200;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -76,9 +78,13 @@ public static class ConfigLoader
 
         if (config.GridWidth <= 0)
             errors.Add($"GridWidth must be positive (got {config.GridWidth}).");
+        else if (config.GridWidth > MaxGridSize)
+            errors.Add($"GridWidth can be at most {MaxGridSize} (got {config.GridWidth}).");
 
         if (config.GridHeight <= 0)
             errors.Add($"GridHeight must be positive (got {config.GridHeight}).");
+        else if (config.GridHeight > MaxGridSize)
+            errors.Add($"GridHeight can be at most {MaxGridSize} (got {config.GridHeight}).");
 
         if (config.AgentCount <= 0)
             errors.Add($"AgentCount must be positive (got {config.AgentCount}).");
