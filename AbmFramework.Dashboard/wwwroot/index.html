@@ -923,6 +923,36 @@
             WolfSheep: {
                 "Stable populations": {
                     gridWidth: 50, gridHeight: 50, initialSheep: 100, initialWolves: 50,
+                    grassRegrowthProbability: 0.033, grassEnergyGain: 4, sheepEnergyGain: 20,
+                    sheepReproductionProbability: 0.04, wolfReproductionProbability: 0.05
+                },
+                "Few wolves": { initialWolves: 5 }
+            }
+        };
+
+        const presetSelect = document.getElementById("presetSelect");
+        let presetChoice = {};
+
+        function fillPresets(model) {
+            const names = Object.keys(presets[model] || {});
+            presetSelect.innerHTML = ["Default", ...names].map(n => `<option>${n}</option>`).join("") + `<option value="Custom" hidden>Custom</option>`;
+            presetSelect.value = presetChoice[model] || "Default";
+        }
+
+        function markCustom() {
+            presetChoice[modelSelect.value] = "Custom";
+            presetSelect.value = "Custom";
+        }
+
+        presetSelect.addEventListener("change", () => {
+            const model = modelSelect.value;
+            const name = presetSelect.value;
+            pendingConfigs[model] = { ...structuredClone(modelDefaults[model]), ...((presets[model] || {})[name] || {}) };
+            activePending = null;
+            presetChoice[model] = name;
+            renderConfiguration(model);
+        });
+
         let modelDefaults = {};
         let pendingConfigs = {};
         let activePending = null;
@@ -939,6 +969,11 @@
                 const wrap = document.createElement("label");
                 wrap.className = "parameter-control";
                 const caption = document.createElement("span"); caption.textContent = label;
+                if (parameterTips[key]) {
+                    const tip = document.createElement("span");
+                    tip.className = "info"; tip.tabIndex = 0; tip.textContent = "i"; tip.dataset.tip = parameterTips[key];
+                    caption.append(tip);
+                }
                 const value = document.createElement("output"); value.id = `value-${key}`;
                 const input = document.createElement("input");
                 input.type = "range"; input.min = min; input.max = max; input.step = step;
@@ -949,10 +984,12 @@
                     const raw = Number(input.value);
                     activePending[configKey(key)] = percent ? raw : (Number.isInteger(step) ? Math.round(raw) : raw);
                     value.textContent = display(input.value);
+                    markCustom();
                 });
                 wrap.append(caption, value, input); parameterControls.append(wrap);
             });
             fillRunOptions();
+            fillPresets(model);
             validationErrors.textContent = "";
         }
 
