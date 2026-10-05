@@ -120,11 +120,11 @@
                     <div class="cmp-card">
                         <div class="cmp-topbar">
                             <label class="cmp-field"><span>Model</span><select id="cmpModel" class="cmp-wide"></select></label>
-                            <label class="cmp-field"><span>Number of runs (${MIN_RUNS}-${MAX_RUNS})</span>
+                            <label class="cmp-field"><span>Number of runs (${MIN_RUNS}-${MAX_RUNS})<span class="info" tabindex="0" data-tip="How many times to run the model. Each run gets a different random seed, so you see how much the results change by chance. More runs give a more reliable average but take longer.">i</span></span>
                                 <input type="number" id="cmpRuns" min="${MIN_RUNS}" max="${MAX_RUNS}" step="1" value="20"></label>
-                            <label class="cmp-field"><span>Base seed (optional)</span>
+                            <label class="cmp-field"><span>Base seed (optional)<span class="info" tabindex="0" data-tip="Leave blank for different results every time. Type a number to get exactly the same set of runs again. Each run gets its own seed made from this one.">i</span></span>
                                 <input type="number" id="cmpSeed" step="1" placeholder="random"></label>
-                            <label class="cmp-toggle"><input type="checkbox" id="cmpTwo"> Compare two settings side by side</label>
+                            <label class="cmp-toggle"><input type="checkbox" id="cmpTwo"> Compare two settings side by side<span class="info" tabindex="0" data-tip="Set up two versions of the settings (A and B), run both the same number of times and see how the results differ.">i</span></label>
                         </div>
                     </div>
 
@@ -306,12 +306,12 @@
                     <input type="number" data-key="gridHeight" min="${MIN_GRID}" max="${MAX_GRID}" value="${g("gridHeight", d.gridHeight)}"></label>
                 <label class="cmp-field"><span>Run length (ticks)</span>
                     <input type="number" data-key="tickLimit" min="1" max="5000" value="${g("tickLimit", d.tickLimit)}"></label>
-                <label class="cmp-field"><span>Scheduling</span>
+                <label class="cmp-field"><span>Scheduling<span class="info" tabindex="0" data-tip="The order agents take their turn each tick. Random shuffles them every tick. Sequential uses the same order every tick.">i</span></span>
                     <select data-key="scheduler">
                         <option value="Random">Random</option>
                         <option value="Sequential">Sequential</option>
                     </select></label>
-                <label class="cmp-toggle"><input type="checkbox" data-key="wrap"> Wrap around edges</label>
+                <label class="cmp-toggle"><input type="checkbox" data-key="wrap"> Wrap around edges<span class="info" tabindex="0" data-tip="When on, an agent walking off one edge comes back on the other side. When off, the edges are walls.">i</span></label>
             </div>
             <div class="cmp-sliders">${params}</div>`;
 
@@ -399,6 +399,12 @@
             }
             if (!Number.isInteger(v.tickLimit) || v.tickLimit < 1) {
                 return `Run length must be a whole number of ticks${where}.`;
+            }
+            const agents = el.model.value === "WolfSheep"
+                ? (v.initialSheep || 0) + (v.initialWolves || 0)
+                : (v.agentCount || 0);
+            if (agents > v.gridWidth * v.gridHeight) {
+                return `Too many agents for a ${v.gridWidth} x ${v.gridHeight} grid${where}. It only has ${v.gridWidth * v.gridHeight} cells but you asked for ${agents} agents. Make the grid bigger or use fewer agents.`;
             }
         }
         return null;
@@ -504,7 +510,7 @@
             </div>`;
 
         // Headline cards: average +/- spread for the first few values.
-        html += `<div class="cmp-card"><h3>Averages across all runs</h3><div class="cmp-kpis">`;
+        html += `<div class="cmp-card"><h3>Averages across all runs<span class="info" tabindex="0" data-tip="The average final value over all the runs. The number after &plusmn; is the spread (standard deviation), and the range is the lowest to the highest run.">i</span></h3><div class="cmp-kpis">`;
         const kpiCols = first.columns.slice(0, 4);
         kpiCols.forEach((col, ci) => {
             state.results.forEach((r) => {
@@ -527,7 +533,7 @@
         html += `
             <div class="cmp-card">
                 <div class="cmp-chart-top">
-                    <h3>Average over time</h3>
+                    <h3>Average over time<span class="info" tabindex="0" data-tip="The line is the average of all runs at each tick. The shaded band goes from the lowest run to the highest run, so a wide band means the runs turned out very differently.">i</span></h3>
                     <label class="cmp-field"><span>Show</span><select id="cmpChartKey">${chartOptions}</select></label>
                 </div>
                 <div class="cmp-chart-wrap"><canvas id="cmpChart"></canvas></div>
@@ -566,7 +572,7 @@
             <div class="cmp-card">
                 <div class="cmp-set-title">
                     ${two ? `<span class="cmp-badge ${lower}">${label}</span>` : ""}
-                    <h3>${two ? `Setting ${label}: ` : ""}Results for each run</h3>
+                    <h3>${two ? `Setting ${label}: ` : ""}Results for each run<span class="info" tabindex="0" data-tip="One row per run with its seed and its values at the end of the run. Put a seed into the Random seed box on the dashboard, with the same settings, to watch that exact run.">i</span></h3>
                 </div>
                 <div class="cmp-scroll"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div>
                 <div class="cmp-scroll-x"><table class="stats ${lower}">
@@ -575,7 +581,7 @@
                         ${statRow("Average", (s) => s.mean)}
                         ${statRow("Lowest", (s) => s.min)}
                         ${statRow("Highest", (s) => s.max)}
-                        ${statRow("Spread (std. dev.)", (s) => s.stdDev)}
+                        ${statRow('Spread (std. dev.)<span class="info" tabindex="0" data-tip="Standard deviation. Roughly how far a typical run ends up from the average. Small means the runs mostly agree, big means chance plays a big part.">i</span>', (s) => s.stdDev)}
                     </tbody>
                 </table></div>
             </div>`;
@@ -597,7 +603,7 @@
 
         return `
             <div class="cmp-card">
-                <h3>Setting B compared with setting A <small>average of each value</small></h3>
+                <h3>Setting B compared with setting A<span class="info" tabindex="0" data-tip="B minus A is how much higher or lower B&#39;s average is than A&#39;s. Change is that difference as a percentage of A.">i</span> <small>average of each value</small></h3>
                 <div class="cmp-scroll"><table>
                     <thead><tr><th>Value</th><th>A average</th><th>B average</th><th>B minus A</th><th>Change</th></tr></thead>
                     <tbody>${rows}</tbody>

@@ -89,13 +89,18 @@ public static class ConfigLoader
         if (config.AgentCount <= 0)
             errors.Add($"AgentCount must be positive (got {config.AgentCount}).");
 
-        if (config.Model is ModelType.SIR or ModelType.Schelling &&
-            config.GridWidth > 0 && config.GridHeight > 0 &&
-            config.AgentCount > (long)config.GridWidth * config.GridHeight)
+        long startingAgents = config.Model == ModelType.WolfSheep
+            ? (long)config.InitialSheep + config.InitialWolves
+            : config.AgentCount;
+        string agentsName = config.Model == ModelType.WolfSheep ? "Sheep plus wolves" : "AgentCount";
+
+        if (config.GridWidth > 0 && config.GridHeight > 0 &&
+            startingAgents > (long)config.GridWidth * config.GridHeight)
         {
             errors.Add(
-                $"AgentCount ({config.AgentCount}) exceeds available grid cells " +
-                $"({config.GridWidth}x{config.GridHeight} = {(long)config.GridWidth * config.GridHeight}).");
+                $"{agentsName} ({startingAgents}) exceeds available grid cells " +
+                $"({config.GridWidth}x{config.GridHeight} = {(long)config.GridWidth * config.GridHeight}). " +
+                "Use a bigger grid or fewer agents.");
         }
 
         if (config.InitialInfected < 0)
