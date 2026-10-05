@@ -26,7 +26,7 @@ const stateStyles = {
 const patchStyles = {
     "Grass": { color: "#8dbf78", label: "Grass" },
     "BareGround": { color: "#b08d6a", label: "Eaten grass" },
-    "Nest": { color: "#7b1fa2", label: "Nest" },
+    "Nest": { color: "#a0703c", label: "Nest", icon: "anthill" },
     "Food": { color: "#ff9800", label: "Food" },
     "Pheromone": { color: "#00acc1", label: "Pheromone trail" }
 };
@@ -49,10 +49,19 @@ let lastAgents = [];
 let lastGrid = null;
 let foodReference = 1;
 let selectedAgentId = null;
+let selectedAgentIds = [];
+const MAX_SELECTED = 6;
+const selectionColors = ["#ff1744", "#2979ff", "#00c853", "#ff9100", "#d500f9", "#00b8d4"];
 
 // Agent shapes, like NetLogo's turtle shapes. Each is an SVG on a 32x32 canvas
 // facing right, drawn in the colour of the agent's state.
 const iconShapes = {
+    anthill: () => `
+        <ellipse cx="16" cy="28" rx="15" ry="2.5" fill="#000" opacity="0.18"/>
+        <path d="M1.5 28 C4 16, 10 7, 16 7 C22 7, 28 16, 30.5 28 Z" fill="#a0703c" stroke="#6d4c2a" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M7.5 23 C9 16, 12 11.5, 15.5 10" stroke="#c99a62" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        <ellipse cx="16" cy="11.5" rx="3.6" ry="2.4" fill="#3b2612"/>
+        <g fill="#6d4c2a"><circle cx="11" cy="21" r="1.1"/><circle cx="21.5" cy="17" r="1.1"/><circle cx="24" cy="23.5" r="1.1"/><circle cx="14" cy="25" r="1.1"/><circle cx="19" cy="21.5" r="0.9"/></g>`,
     person: c => `
         <circle cx="16" cy="8" r="6" fill="${c}" stroke="white" stroke-width="1.5"/>
         <path d="M6 31 C6 20 10 15.5 16 15.5 C22 15.5 26 20 26 31 Z" fill="${c}" stroke="white" stroke-width="1.5"/>`,
@@ -172,6 +181,7 @@ function clearGrid() {
     lastGrid = null;
     foodReference = 1;
     selectedAgentId = null;
+    selectedAgentIds = [];
     facing = {};
     legend.innerHTML = "";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -220,6 +230,7 @@ function drawPatches(grid) {
         }
     });
 
+    const nests = [];
     patches.forEach(p => {
         if (p.grass === false && grid.hasGrass && displayOptions.showGrass) {
             fillCell(p.x, p.y, patchStyles.BareGround.color);
@@ -231,12 +242,25 @@ function drawPatches(grid) {
             drawn.add("Food");
         }
         if (p.nest && displayOptions.showFood) {
-            fillCell(p.x, p.y, patchStyles.Nest.color);
+            nests.push(p);
             drawn.add("Nest");
         }
     });
 
+    // Drawn last and a bit bigger than a cell, so the anthill sits on top of nearby trails.
+    nests.forEach(drawNest);
+
     return drawn;
+}
+
+function drawNest(p) {
+    const img = iconFor(patchStyles.Nest);
+    if (!img) {
+        fillCell(p.x, p.y, patchStyles.Nest.color);
+        return;
+    }
+    const size = Math.max(14, cellSize * 2.6);
+    ctx.drawImage(img, p.x * cellSize + cellSize / 2 - size / 2, p.y * cellSize + cellSize / 2 - size * 0.6, size, size);
 }
 
 function drawAgent(a, style) {
@@ -262,10 +286,17 @@ function drawAgent(a, style) {
 }
 
 function drawSelection() {
-    if (selectedAgentId === null) return;
-    const a = lastAgents.find(agent => agent.id === selectedAgentId);
-    if (!a) return;
+    selectedAgentIds.forEach((id, i) => {
+        const a = lastAgents.find(agent => agent.id === id);
+        if (a) drawRing(a, selectionColor(i));
+    });
+}
 
+function selectionColor(index) {
+    return selectionColors[index % selectionColors.length];
+}
+
+function drawRing(a, color) {
     const cx = a.x * cellSize + cellSize / 2;
     const cy = a.y * cellSize + cellSize / 2;
     const r = Math.max(5, cellSize * 0.7);
@@ -277,7 +308,7 @@ function drawSelection() {
     ctx.stroke();
 
     ctx.lineWidth = 2;
-    ctx.strokeStyle = "#ff1744";
+    ctx.strokeStyle = color;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
@@ -370,6 +401,10 @@ function renderLegend() {
     legend.innerHTML = seenStates
         .map(state => {
             const style = styleFor(state);
+            const patchIcon = state in patchStyles && iconFor(styleFor(state));
+            if (patchIcon) {
+                return `<span class="legend-item"><img class="legend-icon" src="${patchIcon.src}" alt="">${style.label}</span>`;
+            }
             if (state in patchStyles) {
                 return `<span class="legend-item"><span class="swatch square" style="background:${style.color}"></span>${style.label}</span>`;
             }
@@ -394,9 +429,15 @@ function agentsAtCell(x, y) {
     return lastAgents.filter(a => a.x === x && a.y === y);
 }
 
-function selectAgent(id) {
-    selectedAgentId = id;
+function setSelection(ids) {
+    selectedAgentIds = [...new Set(ids)].slice(0, MAX_SELECTED);
+    selectedAgentId = selectedAgentIds.length ? selectedAgentIds[0] : null;
     redrawGrid();
+    if (!lastGrid && typeof onGridDrawn === "function") onGridDrawn(lastAgents);
+}
+
+function selectAgent(id) {
+    setSelection(id === null ? [] : [id]);
 }
 
 function selectedAgent() {
