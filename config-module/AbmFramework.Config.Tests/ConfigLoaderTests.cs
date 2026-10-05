@@ -249,14 +249,36 @@ public class ConfigLoaderTests
         Assert.Contains(exception.Errors, error => error.Contains("TickLimit"));
     }
 
-    [Fact]
-    public void Validate_GridCapacityAppliesOnlyToModelsWithUniqueOccupancy()
+    [Theory]
+    [InlineData(ModelType.SIR)]
+    [InlineData(ModelType.Schelling)]
+    [InlineData(ModelType.Boids)]
+    [InlineData(ModelType.AntForaging)]
+    public void Validate_MoreAgentsThanCells_ThrowsForEveryModel(ModelType model)
     {
-        var sir = new SimulationConfig { Model = ModelType.SIR, GridWidth = 2, GridHeight = 2, AgentCount = 5 };
-        var boids = new SimulationConfig { Model = ModelType.Boids, GridWidth = 2, GridHeight = 2, AgentCount = 5 };
+        var config = new SimulationConfig { Model = model, GridWidth = 5, GridHeight = 5, AgentCount = 1000, InitialInfected = 1 };
 
-        Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(sir));
-        Assert.Null(Record.Exception(() => ConfigLoader.Validate(boids)));
+        var ex = Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(config));
+        Assert.Contains(ex.Errors, e => e.Contains("exceeds available grid cells"));
+    }
+
+    [Fact]
+    public void Validate_WolfSheep_CountsSheepAndWolvesAgainstTheGrid()
+    {
+        var tooMany = new SimulationConfig { Model = ModelType.WolfSheep, GridWidth = 5, GridHeight = 5, AgentCount = 25, InitialSheep = 20, InitialWolves = 10 };
+        var fits = new SimulationConfig { Model = ModelType.WolfSheep, GridWidth = 5, GridHeight = 5, AgentCount = 25, InitialSheep = 20, InitialWolves = 5 };
+
+        var ex = Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(tooMany));
+        Assert.Contains(ex.Errors, e => e.Contains("Sheep plus wolves (30)"));
+        Assert.Null(Record.Exception(() => ConfigLoader.Validate(fits)));
+    }
+
+    [Fact]
+    public void Validate_AgentsFillingEveryCell_IsAllowed()
+    {
+        var config = new SimulationConfig { Model = ModelType.Boids, GridWidth = 5, GridHeight = 5, AgentCount = 25 };
+
+        Assert.Null(Record.Exception(() => ConfigLoader.Validate(config)));
     }
 
     [Fact]

@@ -352,6 +352,75 @@
 
         #grid { cursor: pointer; }
 
+        .info {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            margin-left: 5px;
+            border: 1.5px solid currentColor;
+            border-radius: 50%;
+            font: italic bold 10px/1 Georgia, serif;
+            color: var(--muted);
+            cursor: help;
+            vertical-align: 1px;
+            flex-shrink: 0;
+        }
+
+        .info:hover, .info:focus { color: #2e6be6; outline: none; }
+
+        .monitor-label .info, .cmp .info { text-transform: none; letter-spacing: 0; }
+
+        header .info { color: rgba(255, 255, 255, 0.75); }
+        header .info:hover, header .info:focus { color: #fff; }
+
+        .tip-box {
+            position: fixed;
+            z-index: 2000;
+            max-width: 240px;
+            padding: 7px 10px;
+            border-radius: 6px;
+            background: #1f2a44;
+            color: #fff;
+            font-size: 12px;
+            line-height: 1.4;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+            pointer-events: none;
+        }
+
+        .tip-box[hidden] { display: none; }
+
+        .preset-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 12px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .preset-row select {
+            flex: 1;
+            margin-left: 6px;
+            padding: 5px 8px;
+            font-size: 13px;
+            background: var(--panel);
+        }
+
+        .parameter-control span { display: inline-flex; align-items: center; }
+        .run-options label > span { display: inline-flex; align-items: center; }
+
+        .panel-action {
+            min-width: 0;
+            margin-left: auto;
+            padding: 3px 10px;
+            font-size: 12px;
+            font-weight: normal;
+        }
+
+        .panel-title { display: flex; align-items: center; }
+
         .slot {
             display: flex;
             flex-direction: column;
@@ -584,7 +653,7 @@
             <button id="setupButton" class="primary" title="Create the agents with the current settings">Setup</button>
             <button id="goButton" disabled title="Run until paused">Run</button>
             <button id="stepButton" disabled title="Run a single tick">Step</button>
-            <button id="resetButton" disabled>Reset</button>
+            <button id="resetButton" disabled>Reset</button><span class="info" tabindex="0" data-tip="Setup builds the world with your settings but does not run it yet, so you can check it first. Run plays it, press it again to pause. Step moves forward one tick at a time. Reset clears everything.">i</span>
             <button id="downloadButton" disabled>Download CSV</button>
             <div class="speed">
                 <label for="speedSlider">Speed:</label>
@@ -605,27 +674,30 @@
         <aside class="column sidebar slot" data-slot="left">
             <div class="panel parameter-panel" data-panel="settings">
                 <h3><span class="panel-grip" title="Drag to move this panel" aria-hidden="true"></span>Simulation settings</h3>
+                <label for="presetSelect" class="preset-row">Preset<span class="info" tabindex="0" data-tip="Ready-made settings for this model. Pick one to fill in all the sliders, then change anything you like.">i</span>
+                    <select id="presetSelect"></select>
+                </label>
                 <div id="parameterControls"></div>
                 <div class="run-options">
-                    <label for="gridWidth">Grid width
+                    <label for="gridWidth"><span>Grid width<span class="info" tabindex="0" data-tip="How many cells wide the world is (5 to 200).">i</span></span>
                         <input id="gridWidth" type="number" min="5" max="200" step="1" />
                     </label>
-                    <label for="gridHeight">Grid height
+                    <label for="gridHeight"><span>Grid height<span class="info" tabindex="0" data-tip="How many cells tall the world is (5 to 200).">i</span></span>
                         <input id="gridHeight" type="number" min="5" max="200" step="1" />
                     </label>
-                    <label for="scheduler">Scheduling
+                    <label for="scheduler"><span>Scheduling<span class="info" tabindex="0" data-tip="The order agents take their turn each tick. Random order shuffles them every tick so no agent always goes first. Same order uses a fixed order every tick.">i</span></span>
                         <select id="scheduler">
                             <option value="Random">Random order</option>
                             <option value="Sequential">Same order</option>
                         </select>
                     </label>
                     <label for="wrapEdges" class="wrap-option">
-                        <input id="wrapEdges" type="checkbox" /> Wrap around edges
+                        <input id="wrapEdges" type="checkbox" /> Wrap around edges<span class="info" tabindex="0" data-tip="When on, an agent walking off one edge comes back on the opposite side, like the world is a donut. When off, the edges are walls.">i</span>
                     </label>
-                    <label for="tickLimit">Run length (ticks)
+                    <label for="tickLimit"><span>Run length (ticks)<span class="info" tabindex="0" data-tip="How many ticks the run lasts before it stops on its own.">i</span></span>
                         <input id="tickLimit" type="number" min="1" max="1000000" step="1" />
                     </label>
-                    <label for="randomSeed">Random seed
+                    <label for="randomSeed"><span>Random seed<span class="info" tabindex="0" data-tip="Leave blank for a different run every time. Type a number to get exactly the same run again with the same settings.">i</span></span>
                         <input id="randomSeed" type="number" step="1" placeholder="No seed" />
                     </label>
                 </div>
@@ -643,6 +715,7 @@
                     <h2 id="modelTitle">No simulation running</h2>
                     <span id="statusBadge" class="status">Stopped</span>
                     <span id="tickCounter" class="tick"></span>
+                    <button id="saveGridImage" class="panel-action" title="Save the grid as a PNG image">Save image</button>
                 </div>
                 <p id="modelDescription">Pick a model and press Start.</p>
             </div>
@@ -655,19 +728,19 @@
                 <div id="displaySwitches" class="display-switches">
                     <label class="switch" data-models="AntForaging">
                         <input type="checkbox" id="showPheromone" data-option="showPheromone" checked />
-                        <span class="slider"></span> Show pheromone trails
+                        <span class="slider"></span> Show pheromone trails<span class="info" tabindex="0" data-tip="The scent ants drop on their way back to the nest with food. Darker means stronger. Trails fade a little every tick, and other ants follow them to the food.">i</span>
                     </label>
                     <label class="switch" data-models="AntForaging">
                         <input type="checkbox" id="showFood" data-option="showFood" checked />
-                        <span class="slider"></span> Show food and nest
+                        <span class="slider"></span> Show food and nest<span class="info" tabindex="0" data-tip="Shows the food piles and the anthill. The ants still use them when this is off, you just can't see them.">i</span>
                     </label>
                     <label class="switch" data-models="WolfSheep">
                         <input type="checkbox" id="showGrass" data-option="showGrass" checked />
-                        <span class="slider"></span> Show grass
+                        <span class="slider"></span> Show grass<span class="info" tabindex="0" data-tip="Green cells have grass the sheep can eat. Brown cells were eaten and are waiting to grow back.">i</span>
                     </label>
                     <label class="switch" data-models="WolfSheep">
                         <input type="checkbox" id="showEnergy" data-option="showEnergy" />
-                        <span class="slider"></span> Show energy
+                        <span class="slider"></span> Show energy<span class="info" tabindex="0" data-tip="Shows each sheep and wolf's energy. They lose some every tick, gain some by eating, and die at 0. Only fits on smaller grids.">i</span>
                     </label>
                     <span id="energyHint" class="switch-hint" hidden>Grid too big to fit energy labels.</span>
                 </div>
@@ -682,7 +755,7 @@
 
             <div class="slot" data-slot="rightTop">
                 <div class="panel chart-panel" data-panel="chart">
-                    <h3><span class="panel-grip" title="Drag to move this panel" aria-hidden="true"></span><span id="chartTitle">Statistics</span></h3>
+                    <h3 class="panel-title"><span class="panel-grip" title="Drag to move this panel" aria-hidden="true"></span><span id="chartTitle">Statistics</span><button id="saveChartImage" class="panel-action" title="Save the chart as a PNG image">Save image</button></h3>
                     <div class="chart-wrap">
                         <canvas id="statsChart"></canvas>
                     </div>
@@ -700,11 +773,12 @@
             </div>
         </section>
     </main>
+    <div id="tipBox" class="tip-box" role="tooltip" hidden></div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
     <script src="js/grid.js"></script>
-    <script src="js/compare.js?v=2"></script>
+    <script src="js/compare.js?v=3"></script>
 
     <script>
         const modelSelect = document.getElementById("modelSelect");
@@ -777,6 +851,13 @@
             if (seedText !== "" && !whole(seedText, -2147483648, 2147483647)) {
                 return "Random seed must be a whole number between -2,147,483,648 and 2,147,483,647, or left blank.";
             }
+            const width = Number(gridWidthInput.value), height = Number(gridHeightInput.value);
+            const agents = modelSelect.value === "WolfSheep"
+                ? (activePending.initialSheep || 0) + (activePending.initialWolves || 0)
+                : (activePending.agentCount || 0);
+            if (agents > width * height) {
+                return `Too many agents for a ${width} x ${height} grid. It only has ${width * height} cells but you asked for ${agents} agents. Make the grid bigger or use fewer agents.`;
+            }
             return null;
         }
         const validationErrors = document.getElementById("validationErrors");
@@ -791,6 +872,57 @@
             AntForaging: [["AgentCount", "Number of ants", 1, 10000, 1], ["FoodSources", "Number of food piles", 1, 100, 1], ["FoodPerSource", "Food per pile", 1, 1000, 1], ["PheromoneDepositAmount", "Pheromone dropped", 0, 100, 0.1], ["PheromoneDecayRate", "Pheromone decay rate", 0, 1, 0.01], ["ExplorationChance", "Exploration chance", 0, 1, 0.01, true]],
             WolfSheep: [["InitialSheep", "Initial sheep", 0, 10000, 1], ["InitialWolves", "Initial wolves", 0, 10000, 1], ["GrassRegrowthProbability", "Grass regrowth chance", 0, 1, 0.01, true], ["GrassEnergyGain", "Sheep gain from food", 0.1, 100, 0.1], ["SheepEnergyGain", "Wolf gain from food", 0.1, 100, 0.1], ["SheepReproductionProbability", "Sheep reproduce", 0, 1, 0.01, true], ["WolfReproductionProbability", "Wolf reproduce", 0, 1, 0.01, true]]
         };
+        const parameterTips = {
+            AgentCount: "How many agents are placed on the grid at the start.",
+            InitialInfected: "How many agents start off infected.",
+            InfectionProbability: "The chance each tick that an infected agent infects a healthy neighbour.",
+            RecoveryTicks: "How many ticks an agent stays infected before it recovers.",
+            SimilarityThreshold: "The share of neighbours that must be like an agent for it to be happy and stay put.",
+            GroupARatio: "The share of agents that belong to group A. The rest are group B.",
+            PerceptionRadius: "How far a boid can see other boids, in cells.",
+            SeparationWeight: "How strongly a boid steers away from boids that are too close.",
+            AlignmentWeight: "How strongly a boid turns to match the direction of nearby boids.",
+            CohesionWeight: "How strongly a boid steers towards the middle of nearby boids.",
+            MaxSpeed: "The fastest a boid can move, in cells per tick.",
+            FoodSources: "How many piles of food are placed around the grid.",
+            FoodPerSource: "How much food is in each pile at the start.",
+            PheromoneDepositAmount: "How much pheromone an ant drops on each cell while carrying food home.",
+            PheromoneDecayRate: "How quickly pheromone fades each tick. Higher means trails disappear faster.",
+            ExplorationChance: "The chance an ant ignores the trail and wanders randomly instead.",
+            InitialSheep: "How many sheep start on the grid.",
+            InitialWolves: "How many wolves start on the grid.",
+            GrassRegrowthProbability: "The chance each tick that an eaten patch of grass grows back.",
+            GrassEnergyGain: "How much energy a sheep gets from eating grass.",
+            SheepEnergyGain: "How much energy a wolf gets from eating a sheep.",
+            SheepReproductionProbability: "The chance each tick that a sheep has a lamb.",
+            WolfReproductionProbability: "The chance each tick that a wolf has a cub."
+        };
+
+        // Ready-made settings for each model. Anything not listed keeps the model's default.
+        const presets = {
+            SIR: {
+                "Slow outbreak": { initialInfected: 3, infectionProbability: 0.02, recoveryTicks: 30 },
+                "Fast outbreak": { initialInfected: 5, infectionProbability: 0.25, recoveryTicks: 20 },
+                "Crowded town": { agentCount: 350, infectionProbability: 0.05, recoveryTicks: 40 }
+            },
+            Schelling: {
+                "Tolerant neighbours": { similarityThreshold: 0.3 },
+                "Picky neighbours": { similarityThreshold: 0.75 },
+                "Crowded city": { agentCount: 360 }
+            },
+            Boids: {
+                "Tight flock": { separationWeight: 1, alignmentWeight: 2, cohesionWeight: 2.5 },
+                "Loose swarm": { separationWeight: 2.5, alignmentWeight: 0.3, cohesionWeight: 0.3 },
+                "Fast flyers": { maxSpeed: 2 }
+            },
+            AntForaging: {
+                "Strong trails": { pheromoneDepositAmount: 15, pheromoneDecayRate: 0.005 },
+                "Weak trails": { pheromoneDepositAmount: 2, pheromoneDecayRate: 0.1 },
+                "Curious ants": { explorationChance: 0.4 }
+            },
+            WolfSheep: {
+                "Stable populations": {
+                    gridWidth: 50, gridHeight: 50, initialSheep: 100, initialWolves: 50,
         let modelDefaults = {};
         let pendingConfigs = {};
         let activePending = null;
@@ -823,6 +955,64 @@
             fillRunOptions();
             validationErrors.textContent = "";
         }
+
+        [gridWidthInput, gridHeightInput, schedulerInput, wrapEdgesInput].forEach(input => input.addEventListener("change", markCustom));
+
+        // One shared tooltip, positioned on screen, so panels that scroll can't clip it.
+        const tipBox = document.getElementById("tipBox");
+
+        function showTip(icon) {
+            tipBox.textContent = icon.dataset.tip;
+            tipBox.hidden = false;
+            const r = icon.getBoundingClientRect();
+            const box = tipBox.getBoundingClientRect();
+            const left = Math.min(window.innerWidth - box.width - 8, Math.max(8, r.left + r.width / 2 - box.width / 2));
+            const top = r.top - box.height - 8 < 8 ? r.bottom + 8 : r.top - box.height - 8;
+            tipBox.style.left = `${left}px`;
+            tipBox.style.top = `${top}px`;
+        }
+
+        document.addEventListener("mouseover", e => {
+            const icon = e.target.closest?.(".info");
+            if (icon) showTip(icon); else tipBox.hidden = true;
+        });
+        document.addEventListener("focusin", e => { if (e.target.classList?.contains("info")) showTip(e.target); });
+        document.addEventListener("focusout", e => { if (e.target.classList?.contains("info")) tipBox.hidden = true; });
+        // Clicking the i inside a switch's label shouldn't flip the switch.
+        document.addEventListener("click", e => { if (e.target.closest?.(".info")) e.preventDefault(); });
+
+        // Saves a canvas as a PNG on a solid background, so it isn't see-through in other programs.
+        function saveCanvasImage(source, name, background) {
+            const copy = document.createElement("canvas");
+            copy.width = source.width;
+            copy.height = source.height;
+            const c = copy.getContext("2d");
+            c.fillStyle = background;
+            c.fillRect(0, 0, copy.width, copy.height);
+            c.drawImage(source, 0, 0);
+            copy.toBlob(blob => {
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = name;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+            }, "image/png");
+        }
+
+        function imageName(part) {
+            const model = currentRun ? currentRun.model : modelSelect.value;
+            const tick = (tickCounter.textContent.match(/Tick (\d+)/) || [])[1];
+            return `${model}-${part}${tick ? `-tick-${tick}` : ""}.png`;
+        }
+
+        document.getElementById("saveGridImage").addEventListener("click", () => {
+            saveCanvasImage(canvas, imageName("grid"), getComputedStyle(canvas).backgroundColor || "#ffffff");
+        });
+
+        document.getElementById("saveChartImage").addEventListener("click", () => {
+            const panel = document.querySelector(".chart-panel");
+            saveCanvasImage(document.getElementById("statsChart"), imageName("chart"), getComputedStyle(panel).backgroundColor || "#ffffff");
+        });
 
         let currentRun = null;
         let currentStatus = "Stopped";
@@ -975,6 +1165,29 @@
             monitorValues = {};
         }
 
+        const monitorTips = {
+            Tick: "How many ticks have run. One tick is one round where every agent takes a turn.",
+            Susceptible: "People who have not caught it yet and can still get infected.",
+            Infected: "People who are sick right now and can pass it on to the people next to them.",
+            Recovered: "People who got better. They can't catch it again.",
+            HappyAgents: "Agents with enough neighbours like them, so they stay where they are.",
+            UnhappyAgents: "Agents with too few neighbours like them. They move to an empty cell.",
+            HappyFraction: "The share of agents that are happy. Once it reaches 100% nobody moves anymore.",
+            AverageSpeed: "How fast the birds are flying on average, in cells per tick.",
+            FlockRadius: "How spread out the birds are from the middle of the group. Smaller means a tighter flock.",
+            FoodCollected: "Food the ants have carried back to the nest so far.",
+            FoodRemaining: "Food still left in the piles.",
+            AntsCarryingFood: "Ants walking back to the nest with food right now.",
+            Sheep: "Sheep alive right now.",
+            Wolves: "Wolves alive right now.",
+            Grass: "Cells that have grass right now (the green ones)."
+        };
+
+        function monitorTip(key) {
+            const text = monitorTips[key];
+            return text ? `<span class="info" tabindex="0" data-tip="${text}">i</span>` : "";
+        }
+
         function monitorLabel(key) {
             return key.endsWith("Fraction") ? prettyLabel(key.slice(0, -"Fraction".length)) + " %" : prettyLabel(key);
         }
@@ -991,7 +1204,7 @@
                 const color = metricColor(key) || seriesColors[(Object.keys(monitorValues).length - 1 + seriesColors.length) % seriesColors.length];
                 box.style.borderTopColor = key === "Tick" ? "#888" : color;
                 box.dataset.key = key;
-                box.innerHTML = `<div class="monitor-label">${monitorLabel(key)}</div><div class="monitor-value"></div>`;
+                box.innerHTML = `<div class="monitor-label">${monitorLabel(key)}${monitorTip(key)}</div><div class="monitor-value"></div>`;
                 monitorsEl.appendChild(box);
                 monitorValues[key] = box.querySelector(".monitor-value");
             }
