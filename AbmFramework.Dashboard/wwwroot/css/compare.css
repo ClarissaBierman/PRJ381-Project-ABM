@@ -258,3 +258,32 @@
     .cmp-sets.two, .cmp-tables.two { grid-template-columns: 1fr; }
     .cmp-body { padding: 16px; }
 }
+
+/* Dark mode, switched on by the theme button in the dashboard header. */
+[data-theme="dark"] .cmp {
+    --cmp-ink: #e4e8f0;
+    --cmp-muted: #9aa4b8;
+    --cmp-line: #2e3648;
+    --cmp-bg: #11151d;
+}
+
+[data-theme="dark"] .cmp-card,
+[data-theme="dark"] .cmp input[type="number"],
+[data-theme="dark"] .cmp select,
+[data-theme="dark"] .cmp button:not(.primary):not(.cmp-close) {
+    background: #1b2130;
+    color: #e4e8f0;
+    border-color: #3a4458;
+}
+
+[data-theme="dark"] .cmp-card { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45); }
+[data-theme="dark"] .cmp-slider.differs { background: #3a2a1e; }
+[data-theme="dark"] .cmp-error { background: #3a1d22; border-color: #7a2c35; color: #ff9aa2; }
+[data-theme="dark"] .cmp-bar { background: #2e3648; }
+[data-theme="dark"] .cmp-kpi { background: #222a3a; }
+[data-theme="dark"] .cmp-kpi.b { background: #33271f; }
+[data-theme="dark"] .cmp tbody tr:nth-child(even) { background: #222a3a; }
+[data-theme="dark"] .cmp tbody tr:hover { background: #2a3550; }
+[data-theme="dark"] .cmp table.stats th { background: #2a3245; }
+[data-theme="dark"] .cmp table.stats.b th { background: #3a2c22; }
+[data-theme="dark"] .cmp table.stats tbody tr:nth-child(even) { background: #1b2130; }

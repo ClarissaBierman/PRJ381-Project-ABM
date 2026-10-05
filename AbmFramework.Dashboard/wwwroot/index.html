@@ -4,8 +4,54 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ABM Framework Dashboard</title>
-    <link rel="stylesheet" href="css/compare.css" />
+    <script>
+        (() => {
+            let theme = null;
+            try { theme = localStorage.getItem("abmTheme"); } catch { }
+            if (theme !== "light" && theme !== "dark") {
+                theme = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+            }
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+    <link rel="stylesheet" href="css/compare.css?v=2" />
     <style>
+        :root {
+            --bg: #f5f5f5;
+            --panel: #ffffff;
+            --text: #222222;
+            --muted: #666666;
+            --border: #b0b0b0;
+            --line: #dddddd;
+            --soft: #fafafa;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+            --grid-bg: #ffffff;
+            --grid-border: #888888;
+            color-scheme: light;
+        }
+
+        :root[data-theme="dark"] {
+            --bg: #11151d;
+            --panel: #1b2130;
+            --text: #e4e8f0;
+            --muted: #9aa4b8;
+            --border: #3a4458;
+            --line: #2e3648;
+            --soft: #222a3a;
+            --shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+            --grid-bg: #f2f4f8;
+            --grid-border: #3a4458;
+            color-scheme: dark;
+        }
+
+        select, button, input[type="number"] { color: var(--text); }
+
+        .theme-switch {
+            font-size: 13px;
+            color: #dfe5f2;
+            white-space: nowrap;
+        }
+
         * { box-sizing: border-box; }
 
         html, body { height: 100%; }
@@ -13,8 +59,8 @@
         body {
             font-family: Arial, Helvetica, sans-serif;
             margin: 0;
-            background: #f5f5f5;
-            color: #222;
+            background: var(--bg);
+            color: var(--text);
             display: flex;
             flex-direction: column;
         }
@@ -101,8 +147,8 @@
             font-size: 14px;
             padding: 6px 12px;
             border-radius: 6px;
-            border: 1px solid #b0b0b0;
-            background: white;
+            border: 1px solid var(--border);
+            background: var(--panel);
         }
 
         button {
@@ -152,11 +198,11 @@
         #parameterControls { display: grid; grid-template-columns: 1fr; gap: 8px; }
         .parameter-control { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; font-size: 13px; }
         .parameter-control input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 2px 0; }
-        .parameter-control output { color: #555; font-variant-numeric: tabular-nums; }
+        .parameter-control output { color: var(--muted); font-variant-numeric: tabular-nums; }
         .run-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
         .run-options label { display: flex; flex-direction: column; gap: 4px; font-weight: bold; font-size: 12px; }
-        .run-options input { width: 100%; padding: 6px; border: 1px solid #b0b0b0; border-radius: 6px; font-size: 14px; }
-        .run-options select { width: 100%; padding: 6px; border: 1px solid #b0b0b0; border-radius: 6px; font-size: 14px; background: white; }
+        .run-options input { width: 100%; padding: 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+        .run-options select { width: 100%; padding: 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--panel); }
         .run-options .wrap-option { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 8px; }
         .run-options .wrap-option input { width: auto; }
         #validationErrors { color: #a52834; white-space: pre-line; font-weight: bold; font-size: 13px; margin: 10px 0 0; }
@@ -191,13 +237,13 @@
 
         .tick {
             font-size: 14px;
-            color: #555;
+            color: var(--muted);
             font-variant-numeric: tabular-nums;
         }
 
         #modelDescription {
             margin: 4px 0 0;
-            color: #555;
+            color: var(--muted);
             font-size: 13px;
         }
 
@@ -209,10 +255,10 @@
         }
 
         .panel {
-            background: white;
+            background: var(--panel);
             border-radius: 10px;
             padding: 14px 16px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            box-shadow: var(--shadow);
         }
 
         .panel h3 {
@@ -238,8 +284,8 @@
             inset: 0;
             margin: auto;
             display: block;
-            border: 1px solid #888;
-            background: white;
+            border: 1px solid var(--grid-border);
+            background: var(--grid-bg);
         }
 
         #legend {
@@ -282,17 +328,17 @@
 
         .monitor {
             flex: 1;
-            background: white;
+            background: var(--panel);
             border-radius: 8px;
             border-top: 4px solid #2e6be6;
             padding: 6px 12px;
             min-width: 90px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            box-shadow: var(--shadow);
         }
 
         .monitor-label {
             font-size: 12px;
-            color: #666;
+            color: var(--muted);
             text-transform: uppercase;
             letter-spacing: 0.03em;
         }
@@ -306,35 +352,115 @@
 
         #grid { cursor: pointer; }
 
-        .inspector-panel {
+        .slot {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            min-width: 0;
+        }
+
+        .slot > [data-panel] {
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+
+        .slot[data-slot="rightTop"] { flex: 1 1 auto; min-height: 200px; }
+        .slot[data-slot="rightBottom"] { flex: 0 0 var(--inspector-height, 170px); min-height: 110px; }
+
+        .grid-unit {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .parameter-panel, .inspector-panel { overflow-y: auto; }
+
+        .panel-grip {
+            display: inline-block;
             flex-shrink: 0;
-            min-height: 110px;
-            height: var(--inspector-height, auto);
-            overflow-y: auto;
+            width: 10px;
+            height: 16px;
+            margin-right: 8px;
+            vertical-align: -2px;
+            cursor: grab;
+            opacity: 0.4;
+            background-image: radial-gradient(circle, currentColor 1.3px, transparent 1.7px);
+            background-size: 5px 5px;
+        }
+
+        .panel-grip:hover { opacity: 0.9; }
+        .model-heading .panel-grip { margin-right: -4px; }
+
+        body.moving-panel [data-panel] { transition: opacity 0.15s; }
+        body.moving-panel .slot:not(.drop-target) > [data-panel] { opacity: 0.75; }
+
+        .slot.drop-target > [data-panel] {
+            outline: 2px dashed #2e6be6;
+            outline-offset: 3px;
+            border-radius: 10px;
+        }
+
+        .layout-reset {
+            margin-left: auto;
+            min-width: 0;
+            font-size: 13px;
+            padding: 5px 10px;
         }
 
         .inspect-hint {
             font-size: 13px;
-            color: #888;
+            color: var(--muted);
         }
 
         .inspect-hint[hidden] { display: none; }
 
         .inspector {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            gap: 10px;
+        }
+
+        .inspector-bar {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .inspector-bar button {
+            min-width: 0;
+            padding: 3px 10px;
+            font-size: 12px;
+        }
+
+        .inspector-card {
             position: relative;
-            border: 1px solid #ddd;
+            border: 1px solid var(--line);
             border-left: 5px solid #999;
             border-radius: 8px;
             padding: 10px 14px;
-            background: #fafafa;
+            background: var(--soft);
             font-size: 14px;
         }
 
         .inspector[hidden] { display: none; }
 
         .inspector h4 {
+            display: flex;
+            align-items: center;
+            gap: 7px;
             margin: 0 0 6px;
             font-size: 15px;
+        }
+
+        .ring-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 2.5px solid;
+            flex-shrink: 0;
         }
 
         .inspector dl {
@@ -344,13 +470,13 @@
             margin: 0;
         }
 
-        .inspector dt { color: #666; }
+        .inspector dt { color: var(--muted); }
         .inspector dd { margin: 0; font-variant-numeric: tabular-nums; }
 
         .inspector .inspector-note {
             margin-top: 6px;
             font-size: 12px;
-            color: #888;
+            color: var(--muted);
         }
 
         .inspector-close {
@@ -363,7 +489,7 @@
             line-height: 22px;
             border: none;
             background: transparent;
-            color: #777;
+            color: var(--muted);
         }
 
         .display-switches {
@@ -411,7 +537,7 @@
             width: 14px;
             height: 14px;
             border-radius: 50%;
-            background: white;
+            background: var(--panel);
             transition: transform 0.15s;
         }
 
@@ -420,13 +546,13 @@
         .switch input:focus-visible + .slider { outline: 2px solid #2e6be6; outline-offset: 2px; }
 
         .switch-hint {
-            color: #777;
+            color: var(--muted);
             font-style: italic;
         }
 
         .chart-panel {
             flex: 1;
-            min-height: 220px;
+            min-height: 0;
             display: flex;
             flex-direction: column;
         }
@@ -444,7 +570,8 @@
             .chart-panel { flex: none; }
             .chart-wrap { flex: none; height: 360px; }
             .gutter { display: none; }
-            .inspector-panel { height: auto; }
+            .slot[data-slot="rightBottom"], .slot[data-slot="rightTop"] { flex: none; }
+            .grid-unit { flex: none; }
         }
     </style>
 </head>
@@ -467,12 +594,17 @@
                 <span id="speedLabel"></span>
             </div>
         </div>
+        <button id="resetLayoutButton" class="layout-reset" title="Put the panels and sizes back to how they started">Reset layout</button>
+        <label class="switch theme-switch" for="themeToggle">
+            <input type="checkbox" id="themeToggle" />
+            <span class="slider"></span> Dark mode
+        </label>
     </header>
 
     <main>
-        <aside class="column sidebar">
-            <div class="panel parameter-panel">
-                <h3>Simulation settings</h3>
+        <aside class="column sidebar slot" data-slot="left">
+            <div class="panel parameter-panel" data-panel="settings">
+                <h3><span class="panel-grip" title="Drag to move this panel" aria-hidden="true"></span>Simulation settings</h3>
                 <div id="parameterControls"></div>
                 <div class="run-options">
                     <label for="gridWidth">Grid width
@@ -503,9 +635,11 @@
 
         <div class="gutter" data-resize="left" title="Drag to resize. Double-click to reset."></div>
 
-        <section class="column">
+        <section class="column slot" data-slot="middle">
+            <div class="grid-unit" data-panel="grid">
             <div>
                 <div class="model-heading">
+                    <span class="panel-grip" title="Drag to move this panel" aria-hidden="true"></span>
                     <h2 id="modelTitle">No simulation running</h2>
                     <span id="statusBadge" class="status">Stopped</span>
                     <span id="tickCounter" class="tick"></span>
@@ -538,6 +672,7 @@
                     <span id="energyHint" class="switch-hint" hidden>Grid too big to fit energy labels.</span>
                 </div>
             </div>
+            </div>
         </section>
 
         <div class="gutter" data-resize="middle" title="Drag to resize. Double-click to reset."></div>
@@ -545,19 +680,23 @@
         <section class="column" id="rightColumn">
             <div id="monitors" class="monitors"></div>
 
-            <div class="panel chart-panel">
-                <h3 id="chartTitle">Statistics</h3>
-                <div class="chart-wrap">
-                    <canvas id="statsChart"></canvas>
+            <div class="slot" data-slot="rightTop">
+                <div class="panel chart-panel" data-panel="chart">
+                    <h3><span class="panel-grip" title="Drag to move this panel" aria-hidden="true"></span><span id="chartTitle">Statistics</span></h3>
+                    <div class="chart-wrap">
+                        <canvas id="statsChart"></canvas>
+                    </div>
                 </div>
             </div>
 
             <div class="gutter horizontal" data-resize="inspector" title="Drag to resize. Double-click to reset."></div>
 
-            <div class="panel inspector-panel" id="inspectorPanel">
-                <h3>Agent inspector</h3>
-                <div id="inspectHint" class="inspect-hint">Click an agent on the grid to see its details.</div>
-                <div id="inspector" class="inspector" hidden></div>
+            <div class="slot" data-slot="rightBottom" id="inspectorSlot">
+                <div class="panel inspector-panel" data-panel="inspector">
+                    <h3><span class="panel-grip" title="Drag to move this panel" aria-hidden="true"></span>Agent inspector</h3>
+                    <div id="inspectHint" class="inspect-hint">Click an agent on the grid to see its details. Ctrl+click to add more (up to 6).</div>
+                    <div id="inspector" class="inspector" hidden></div>
+                </div>
             </div>
         </section>
     </main>
@@ -565,7 +704,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
     <script src="js/grid.js"></script>
-    <script src="js/compare.js"></script>
+    <script src="js/compare.js?v=2"></script>
 
     <script>
         const modelSelect = document.getElementById("modelSelect");
@@ -696,6 +835,16 @@
             Sheep: "rgba(241,196,15,1)",
             Wolves: "rgba(52,73,94,1)"
         };
+
+        // Colours too dark to see on the dark background get a lighter version.
+        const darkModeColors = {
+            Wolves: "rgba(143,163,191,1)"
+        };
+
+        function metricColor(key) {
+            const dark = document.documentElement.dataset.theme === "dark";
+            return (dark && darkModeColors[key]) || modelMetricColors[key];
+        }
         const sirKeys = ["Susceptible", "Infected", "Recovered"];
 
         // Every tick of the run is kept as an {x, y} point. Once a series has
@@ -703,6 +852,14 @@
         // thins them at draw time (LTTB keeps the curve's shape and peaks),
         // so a long run stays fully visible without slowing the chart down.
         // Decimation requires parsing: false and a linear x axis.
+        function themeColors() {
+            const dark = document.documentElement.dataset.theme === "dark";
+            return { text: dark ? "#c3cad8" : "#555555", grid: dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)" };
+        }
+
+        Chart.defaults.color = themeColors().text;
+        Chart.defaults.borderColor = themeColors().grid;
+
         const chartData = { datasets: [] };
         const statsChart = new Chart(document.getElementById("statsChart").getContext("2d"), {
             type: "line",
@@ -734,6 +891,49 @@
         // be pushed onto these original arrays rather than onto dataset.data.
         let pointsByKey = {};
 
+        const themeToggle = document.getElementById("themeToggle");
+
+        function showThemeButton() {
+            themeToggle.checked = document.documentElement.dataset.theme === "dark";
+        }
+
+        function applyTheme(theme) {
+            document.documentElement.dataset.theme = theme;
+            try { localStorage.setItem("abmTheme", theme); } catch { }
+            const colors = themeColors();
+            statsChart.data.datasets.forEach(ds => {
+                const c = metricColor(ds.metricKey);
+                if (c) {
+                    ds.borderColor = c;
+                    ds.backgroundColor = c.replace(",1)", ",0.1)");
+                }
+            });
+            document.querySelectorAll(".monitor[data-key]").forEach(box => {
+                const c = metricColor(box.dataset.key);
+                if (c) box.style.borderTopColor = c;
+            });
+            Chart.defaults.color = colors.text;
+            Chart.defaults.borderColor = colors.grid;
+            Object.values(Chart.instances).forEach(chart => {
+                Object.values(chart.options.scales || {}).forEach(scale => {
+                    scale.ticks = { ...scale.ticks, color: colors.text };
+                    scale.title = { ...scale.title, color: colors.text };
+                    scale.grid = { ...scale.grid, color: colors.grid };
+                });
+                if (chart.options.plugins?.legend) {
+                    chart.options.plugins.legend.labels = { ...chart.options.plugins.legend.labels, color: colors.text };
+                }
+                chart.update("none");
+            });
+            showThemeButton();
+        }
+
+        themeToggle.addEventListener("change", () => {
+            applyTheme(themeToggle.checked ? "dark" : "light");
+        });
+
+        showThemeButton();
+
         function resetChart() {
             chartData.datasets.length = 0;
             pointsByKey = {};
@@ -751,9 +951,10 @@
             const isFraction = key.includes("Fraction");
             if (isFraction) statsChart.options.scales.y1.display = true;
 
-            const color = modelMetricColors[key] || seriesColors[chartData.datasets.length % seriesColors.length];
+            const color = metricColor(key) || seriesColors[chartData.datasets.length % seriesColors.length];
             const points = [];
             chartData.datasets.push({
+                metricKey: key,
                 label: prettyLabel(key),
                 borderColor: color,
                 backgroundColor: color.replace(",1)", ",0.1)"),
@@ -787,8 +988,9 @@
             if (!(key in monitorValues)) {
                 const box = document.createElement("div");
                 box.className = "monitor";
-                const color = modelMetricColors[key] || seriesColors[(Object.keys(monitorValues).length - 1 + seriesColors.length) % seriesColors.length];
+                const color = metricColor(key) || seriesColors[(Object.keys(monitorValues).length - 1 + seriesColors.length) % seriesColors.length];
                 box.style.borderTopColor = key === "Tick" ? "#888" : color;
+                box.dataset.key = key;
                 box.innerHTML = `<div class="monitor-label">${monitorLabel(key)}</div><div class="monitor-value"></div>`;
                 monitorsEl.appendChild(box);
                 monitorValues[key] = box.querySelector(".monitor-value");
@@ -918,9 +1120,8 @@
             inspectHint.hidden = false;
         }
 
-        function showInspector(html, color) {
+        function showInspector(html) {
             inspector.innerHTML = html;
-            inspector.style.borderLeftColor = color;
             inspector.hidden = false;
             inspectHint.hidden = true;
         }
@@ -930,19 +1131,21 @@
             hideInspector();
         }
 
-        function renderInspector() {
-            if (selectedAgentId === null) {
-                hideInspector();
-                return;
-            }
+        function removeFromInspector(id) {
+            setSelection(selectedAgentIds.filter(other => other !== id));
+            if (selectedAgentIds.length === 0) hideInspector();
+        }
 
-            const a = selectedAgent();
-            const closeButton = `<button class="inspector-close" title="Close" onclick="closeInspector()">&times;</button>`;
+        let inspectorNote = "";
+
+        function inspectorCard(id, index) {
+            const ring = `<span class="ring-dot" style="border-color:${selectionColor(index)}" title="Ring colour on the grid"></span>`;
+            const closeButton = `<button class="inspector-close" title="Remove" onclick="removeFromInspector(${id})">&times;</button>`;
+            const a = lastAgents.find(agent => agent.id === id);
 
             if (!a) {
-                showInspector(`${closeButton}<h4>Agent #${selectedAgentId}</h4>
-                    <div>This agent is no longer in the simulation.</div>`, "#999");
-                return;
+                return `<div class="inspector-card" style="border-left-color:#999">${closeButton}<h4>${ring}Agent #${id}</h4>
+                    <div>This agent is no longer in the simulation.</div></div>`;
             }
 
             const style = styleFor(a.state);
@@ -955,19 +1158,28 @@
             if (typeof a.heading === "number") rows.push(["Heading", compass(a.heading)]);
             if (typeof a.speed === "number") rows.push(["Speed", `${a.speed.toFixed(2)} cells/tick`]);
 
-            const others = agentsAtCell(a.x, a.y).length - 1;
-            const note = others > 0
-                ? `<div class="inspector-note">${others} other agent${others === 1 ? "" : "s"} in this cell. Click it again to see the next one.</div>`
+            return `<div class="inspector-card" style="border-left-color:${style.color}">${closeButton}<h4>${ring}Agent #${a.id}</h4>
+                <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div>`;
+        }
+
+        function renderInspector() {
+            if (selectedAgentIds.length === 0) {
+                hideInspector();
+                return;
+            }
+
+            const count = selectedAgentIds.length;
+            const bar = count > 1 || inspectorNote
+                ? `<div class="inspector-bar"><span>${inspectorNote || `Watching ${count} agents`}</span>${count > 1 ? `<button onclick="closeInspector()">Clear all</button>` : ""}</div>`
                 : "";
 
-            showInspector(`${closeButton}<h4>Agent #${a.id}</h4>
-                <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>${note}`, style.color);
+            showInspector(bar + selectedAgentIds.map(inspectorCard).join(""));
         }
 
         const layout = (() => {
             const main = document.querySelector("main");
             const rightColumn = document.getElementById("rightColumn");
-            const inspectorPanel = document.getElementById("inspectorPanel");
+            const inspectorPanel = document.getElementById("inspectorSlot");
             const storageKey = "abmDashboardLayout";
             let sizes = {};
 
@@ -1043,8 +1255,95 @@
 
             window.addEventListener("resize", apply);
             apply();
-            return { apply };
+
+            function reset() {
+                sizes = {};
+                apply();
+                save();
+            }
+
+            return { apply, reset };
         })();
+
+        // Panels can be dragged by their grip onto another panel to swap places.
+        const panelLayout = (() => {
+            const storageKey = "abmPanelSlots";
+            const slots = [...document.querySelectorAll(".slot")];
+            const panelIn = slot => slot.querySelector(":scope > [data-panel]");
+            const defaults = Object.fromEntries(slots.map(s => [s.dataset.slot, panelIn(s).dataset.panel]));
+            let dragging = null;
+
+            function current() {
+                return Object.fromEntries(slots.map(s => [s.dataset.slot, panelIn(s).dataset.panel]));
+            }
+
+            function place(map) {
+                const panels = Object.fromEntries(slots.map(s => [panelIn(s).dataset.panel, panelIn(s)]));
+                const wanted = slots.map(s => map?.[s.dataset.slot]);
+                if (new Set(wanted).size !== slots.length || !wanted.every(name => name in panels)) return;
+                slots.forEach(s => s.appendChild(panels[map[s.dataset.slot]]));
+            }
+
+            function save() {
+                try { localStorage.setItem(storageKey, JSON.stringify(current())); } catch { }
+            }
+
+            try { place(JSON.parse(localStorage.getItem(storageKey))); } catch { }
+
+            function clearTargets() {
+                slots.forEach(s => s.classList.remove("drop-target"));
+            }
+
+            document.querySelectorAll(".panel-grip").forEach(grip => {
+                grip.draggable = true;
+                grip.addEventListener("dragstart", e => {
+                    dragging = grip.closest("[data-panel]");
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", dragging.dataset.panel);
+                    e.dataTransfer.setDragImage(dragging, 24, 24);
+                    document.body.classList.add("moving-panel");
+                });
+                grip.addEventListener("dragend", () => {
+                    dragging = null;
+                    document.body.classList.remove("moving-panel");
+                    clearTargets();
+                });
+            });
+
+            slots.forEach(slot => {
+                slot.addEventListener("dragover", e => {
+                    if (!dragging) return;
+                    e.preventDefault();
+                    slots.forEach(s => s.classList.toggle("drop-target", s === slot && panelIn(s) !== dragging));
+                });
+                slot.addEventListener("dragleave", e => {
+                    if (!slot.contains(e.relatedTarget)) slot.classList.remove("drop-target");
+                });
+                slot.addEventListener("drop", e => {
+                    e.preventDefault();
+                    const other = panelIn(slot);
+                    if (dragging && other && other !== dragging) {
+                        const from = dragging.parentElement;
+                        from.appendChild(other);
+                        slot.appendChild(dragging);
+                        save();
+                    }
+                    clearTargets();
+                });
+            });
+
+            function reset() {
+                try { localStorage.removeItem(storageKey); } catch { }
+                place(defaults);
+            }
+
+            return { reset, current };
+        })();
+
+        document.getElementById("resetLayoutButton").addEventListener("click", () => {
+            panelLayout.reset();
+            layout.reset();
+        });
 
         const gridBox = document.getElementById("gridBox");
 
@@ -1064,14 +1363,28 @@
             const cell = cellFromEvent(event);
             const here = agentsAtCell(cell.x, cell.y);
 
+            const adding = event.ctrlKey || event.metaKey || event.shiftKey;
+            inspectorNote = "";
+
             if (here.length === 0) {
-                closeInspector();
+                if (!adding) closeInspector();
                 return;
             }
 
-            const current = here.findIndex(a => a.id === selectedAgentId);
-            const next = here[(current + 1) % here.length];
-            selectAgent(next.id);
+            if (!adding) {
+                setSelection(here.slice(0, MAX_SELECTED).map(a => a.id));
+                return;
+            }
+
+            const notYet = here.find(a => !selectedAgentIds.includes(a.id));
+            if (!notYet) {
+                setSelection(selectedAgentIds.filter(id => !here.some(a => a.id === id)));
+            } else if (selectedAgentIds.length >= MAX_SELECTED) {
+                inspectorNote = `You can watch up to ${MAX_SELECTED} agents at a time.`;
+                renderInspector();
+            } else {
+                setSelection([...selectedAgentIds, notYet.id]);
+            }
         });
 
         const connection = new signalR.HubConnectionBuilder()
