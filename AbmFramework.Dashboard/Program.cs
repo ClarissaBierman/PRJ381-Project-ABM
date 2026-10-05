@@ -4,7 +4,11 @@ using AbmFramework.Dashboard.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSignalR();
+builder.Services.AddSignalR()
+    .AddHubOptions<ComparisonHub>(options =>
+    {
+        options.MaximumParallelInvocationsPerClient = 2;
+    });
 builder.Services.AddControllers();
 builder.Services.AddSingleton<LiveSimulationService>();
 builder.Services.AddSingleton<ComparisonService>();
