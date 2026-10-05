@@ -116,6 +116,12 @@
             color: white;
         }
 
+        #goButton.running {
+            background: #1e7b34;
+            border-color: #1e7b34;
+            color: white;
+        }
+
         button:disabled {
             opacity: 0.45;
             cursor: default;
@@ -150,6 +156,9 @@
         .run-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
         .run-options label { display: flex; flex-direction: column; gap: 4px; font-weight: bold; font-size: 12px; }
         .run-options input { width: 100%; padding: 6px; border: 1px solid #b0b0b0; border-radius: 6px; font-size: 14px; }
+        .run-options select { width: 100%; padding: 6px; border: 1px solid #b0b0b0; border-radius: 6px; font-size: 14px; background: white; }
+        .run-options .wrap-option { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 8px; }
+        .run-options .wrap-option input { width: auto; }
         #validationErrors { color: #a52834; white-space: pre-line; font-weight: bold; font-size: 13px; margin: 10px 0 0; }
         #validationErrors:empty { display: none; }
 
@@ -174,6 +183,7 @@
             color: #444;
         }
 
+        .status.Ready { background: #e8e0f7; color: #5b3a9e; }
         .status.Running { background: #d4edda; color: #1e7b34; }
         .status.Paused { background: #fff3cd; color: #8a6d00; }
         .status.Completed { background: #d6e4ff; color: #1f4fa8; }
@@ -444,8 +454,9 @@
         <div class="controls">
             <label for="modelSelect">Model:</label>
             <select id="modelSelect"></select>
-            <button id="startButton" class="primary">Start</button>
-            <button id="pauseButton" disabled>Pause</button>
+            <button id="setupButton" class="primary" title="Create the agents with the current settings">Setup</button>
+            <button id="goButton" disabled title="Run until paused">Run</button>
+            <button id="stepButton" disabled title="Run a single tick">Step</button>
             <button id="resetButton" disabled>Reset</button>
             <button id="downloadButton" disabled>Download CSV</button>
             <div class="speed">
@@ -464,6 +475,21 @@
                 <h3>Simulation settings</h3>
                 <div id="parameterControls"></div>
                 <div class="run-options">
+                    <label for="gridWidth">Grid width
+                        <input id="gridWidth" type="number" min="5" max="200" step="1" />
+                    </label>
+                    <label for="gridHeight">Grid height
+                        <input id="gridHeight" type="number" min="5" max="200" step="1" />
+                    </label>
+                    <label for="scheduler">Scheduling
+                        <select id="scheduler">
+                            <option value="Random">Random order</option>
+                            <option value="Sequential">Same order</option>
+                        </select>
+                    </label>
+                    <label for="wrapEdges" class="wrap-option">
+                        <input id="wrapEdges" type="checkbox" /> Wrap around edges
+                    </label>
                     <label for="tickLimit">Run length (ticks)
                         <input id="tickLimit" type="number" min="1" max="1000000" step="1" />
                     </label>
@@ -543,8 +569,9 @@
 
     <script>
         const modelSelect = document.getElementById("modelSelect");
-        const startButton = document.getElementById("startButton");
-        const pauseButton = document.getElementById("pauseButton");
+        const setupButton = document.getElementById("setupButton");
+        const goButton = document.getElementById("goButton");
+        const stepButton = document.getElementById("stepButton");
         const resetButton = document.getElementById("resetButton");
         const downloadButton = document.getElementById("downloadButton");
         const modelTitle = document.getElementById("modelTitle");
@@ -574,6 +601,45 @@
         const parameterControls = document.getElementById("parameterControls");
         const tickLimitInput = document.getElementById("tickLimit");
         const randomSeedInput = document.getElementById("randomSeed");
+        const gridWidthInput = document.getElementById("gridWidth");
+        const gridHeightInput = document.getElementById("gridHeight");
+        const schedulerInput = document.getElementById("scheduler");
+        const wrapEdgesInput = document.getElementById("wrapEdges");
+
+        // Copies the boxes under the sliders into the pending settings, as typed.
+        function readRunOptions() {
+            activePending.tickLimit = Number(tickLimitInput.value);
+            activePending.randomSeed = randomSeedInput.value === "" ? null : Number(randomSeedInput.value);
+            activePending.gridWidth = Number(gridWidthInput.value);
+            activePending.gridHeight = Number(gridHeightInput.value);
+            activePending.scheduler = schedulerInput.value;
+            activePending.topology = wrapEdgesInput.checked ? "Toroidal" : "Bounded";
+        }
+
+        function fillRunOptions() {
+            tickLimitInput.value = activePending.tickLimit;
+            randomSeedInput.value = activePending.randomSeed ?? "";
+            gridWidthInput.value = activePending.gridWidth;
+            gridHeightInput.value = activePending.gridHeight;
+            schedulerInput.value = activePending.scheduler;
+            wrapEdgesInput.checked = activePending.topology === "Toroidal";
+        }
+
+        // Returns an error message, or null when the boxes hold valid values.
+        function checkRunOptions() {
+            const whole = (text, min, max) => /^-?\d+$/.test(text) && Number(text) >= min && Number(text) <= max;
+            if (!whole(gridWidthInput.value.trim(), 5, 200) || !whole(gridHeightInput.value.trim(), 5, 200)) {
+                return "Grid width and height must be whole numbers from 5 to 200.";
+            }
+            if (!whole(tickLimitInput.value.trim(), 1, 1000000)) {
+                return "Run length must be an integer from 1 to 1,000,000.";
+            }
+            const seedText = randomSeedInput.value.trim();
+            if (seedText !== "" && !whole(seedText, -2147483648, 2147483647)) {
+                return "Random seed must be a whole number between -2,147,483,648 and 2,147,483,647, or left blank.";
+            }
+            return null;
+        }
         const validationErrors = document.getElementById("validationErrors");
 
         const parameterDefinitions = {
@@ -593,8 +659,7 @@
 
         function renderConfiguration(model) {
             if (activePending) {
-                activePending.tickLimit = Number(tickLimitInput.value);
-                activePending.randomSeed = randomSeedInput.value === "" ? null : Number(randomSeedInput.value);
+                readRunOptions();
             }
             activePending = structuredClone(pendingConfigs[model] || modelDefaults[model]);
             pendingConfigs[model] = activePending;
@@ -616,8 +681,7 @@
                 });
                 wrap.append(caption, value, input); parameterControls.append(wrap);
             });
-            tickLimitInput.value = activePending.tickLimit;
-            randomSeedInput.value = activePending.randomSeed ?? "";
+            fillRunOptions();
             validationErrors.textContent = "";
         }
 
@@ -756,11 +820,13 @@
             statusBadge.textContent = status;
             statusBadge.className = "status " + status;
 
-            const active = status === "Running" || status === "Paused";
-            pauseButton.disabled = !active;
-            pauseButton.textContent = status === "Paused" ? "Resume" : "Pause";
+            const running = status === "Running";
+            const waiting = status === "Ready" || status === "Paused";
+            goButton.disabled = !(running || waiting);
+            goButton.textContent = running ? "Pause" : "Run";
+            goButton.classList.toggle("running", running);
+            stepButton.disabled = !waiting;
             resetButton.disabled = status === "Stopped";
-            startButton.textContent = active ? "Restart" : "Start";
         }
 
         function showRun(run) {
@@ -1033,31 +1099,26 @@
             drawGrid(grid);
         });
 
-        startButton.addEventListener("click", () => {
-            validationErrors.textContent = "";
-            const tickText = tickLimitInput.value.trim();
-            const seedText = randomSeedInput.value.trim();
-            if (!/^\d+$/.test(tickText) || Number(tickText) < 1 || Number(tickText) > 1000000) {
-                validationErrors.textContent = "Run length must be an integer from 1 to 1,000,000."; return;
-            }
-            if (seedText !== "" && !/^-?\d+$/.test(seedText)) {
-                validationErrors.textContent = "Random seed must be a 32-bit integer, or left blank."; return;
-            }
-            const seed = seedText === "" ? null : Number(seedText);
-            if (seed !== null && (!Number.isSafeInteger(seed) || seed < -2147483648 || seed > 2147483647)) {
-                validationErrors.textContent = "Random seed must be between -2,147,483,648 and 2,147,483,647."; return;
-            }
-            activePending.tickLimit = Number(tickText);
-            activePending.randomSeed = seed;
+        setupButton.addEventListener("click", () => {
+            const problem = checkRunOptions();
+            validationErrors.textContent = problem || "";
+            if (problem) return;
+
+            readRunOptions();
             pendingConfigs[modelSelect.value] = activePending;
-            connection.invoke("StartSimulation", activePending).catch(err => {
-                validationErrors.textContent = err.message || "Simulation settings are invalid.";
+            connection.invoke("SetupSimulation", activePending).catch(err => {
+                const message = err.message || "Simulation settings are invalid.";
+                validationErrors.textContent = message.replace(/^.*HubException:\s*/s, "");
             });
         });
 
-        pauseButton.addEventListener("click", () => {
-            const method = currentStatus === "Paused" ? "ResumeSimulation" : "PauseSimulation";
+        goButton.addEventListener("click", () => {
+            const method = currentStatus === "Running" ? "PauseSimulation" : "ResumeSimulation";
             connection.invoke(method).catch(err => console.error(err));
+        });
+
+        stepButton.addEventListener("click", () => {
+            connection.invoke("StepSimulation").catch(err => console.error(err));
         });
 
         resetButton.addEventListener("click", () => {

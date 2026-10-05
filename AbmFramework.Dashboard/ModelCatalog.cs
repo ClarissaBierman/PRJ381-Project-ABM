@@ -27,7 +27,7 @@ public static class ModelCatalog
     public static string Description(ModelType model) => model switch
     {
         ModelType.SIR =>
-            "Agents move from Susceptible to Infected to Recovered as the infection spreads through neighbouring cells.",
+            "Agents move from susceptible to infected to recovered as the infection spreads through neighbouring cells.",
         ModelType.Schelling =>
             "Each agent relocates when too few of its neighbours belong to its own group, which gradually produces segregated clusters.",
         ModelType.Boids =>

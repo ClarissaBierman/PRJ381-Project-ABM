@@ -131,6 +131,25 @@ public class ConfigLoaderTests
         Assert.Contains(ex.Errors, e => e.Contains("exceeds available grid cells"));
     }
 
+    [Theory]
+    [InlineData(201, 50, "GridWidth")]
+    [InlineData(50, 201, "GridHeight")]
+    public void Validate_GridLargerThanMaximum_Throws(int width, int height, string field)
+    {
+        var config = new SimulationConfig { GridWidth = width, GridHeight = height };
+
+        var ex = Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(config));
+        Assert.Contains(ex.Errors, e => e.Contains(field) && e.Contains("at most"));
+    }
+
+    [Fact]
+    public void Validate_GridAtMaximumSize_IsValid()
+    {
+        var config = new SimulationConfig { GridWidth = ConfigLoader.MaxGridSize, GridHeight = ConfigLoader.MaxGridSize };
+
+        Assert.Null(Record.Exception(() => ConfigLoader.Validate(config)));
+    }
+
     [Fact]
     public void Validate_DefaultConfig_IsValid()
     {

@@ -26,6 +26,14 @@ public sealed class SimulationEngine : ISimulationEngine
 
     public event EventHandler? SimulationCompleted;
 
+    //Raised once the agents and grid exist, before the first tick runs.
+    public event EventHandler? SimulationInitialised;
+
+    //When true, StartAsync sets everything up and then waits paused at tick 0.
+    public bool StartPaused { get; set; }
+
+    private volatile bool _stepRequested;
+
     public SimulationState State => _state;
 
     public bool IsRunning => _state == SimulationState.Running;
@@ -337,17 +345,25 @@ public sealed class SimulationEngine : ISimulationEngine
 
         InitialiseSimulation(config);
 
+        if (StartPaused)
+            _state = SimulationState.Paused;
+
+        SimulationInitialised?.Invoke(this, EventArgs.Empty);
+
         while (!cancellationToken.IsCancellationRequested &&
                CurrentTick < config.TickLimit)
         {
-            //Pause handling
-            while (IsPaused && !cancellationToken.IsCancellationRequested)
+            //Pause handling. A step request lets exactly one tick through.
+            while (IsPaused && !_stepRequested && !cancellationToken.IsCancellationRequested)
             {
-                await Task.Delay(100, cancellationToken);
+                await Task.Delay(20, cancellationToken);
             }
 
             if (cancellationToken.IsCancellationRequested)
                 break;
+
+            bool stepping = _stepRequested;
+            _stepRequested = false;
 
             ExecuteTick();
 
@@ -358,7 +374,8 @@ public sealed class SimulationEngine : ISimulationEngine
             CurrentTick++;
 
             //Pause between ticks so dashboards can keep up. Adjustable while running.
-            await Task.Delay(TickDelayMs, cancellationToken);
+            if (!stepping)
+                await Task.Delay(TickDelayMs, cancellationToken);
         }
 
         _state = SimulationState.Completed;
@@ -689,10 +706,18 @@ public sealed class SimulationEngine : ISimulationEngine
         _state = SimulationState.Running;
     }
 
+    //Runs a single tick while paused, like NetLogo's "go once".
+    public void Step()
+    {
+        if (_state == SimulationState.Paused)
+            _stepRequested = true;
+    }
+
     //Stops the simulation and clears all runtime state.
     public void Reset()
     {
         _state = SimulationState.Stopped;
+        _stepRequested = false;
 
         CurrentTick = 0;
 
