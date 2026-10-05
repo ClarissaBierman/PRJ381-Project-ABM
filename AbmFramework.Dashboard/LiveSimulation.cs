@@ -38,14 +38,15 @@ public class LiveSimulationService
         _logger = logger;
     }
 
-    public async Task StartAsync(ModelType model)
+    public async Task StartAsync(SimulationConfig config)
     {
+        ConfigLoader.Validate(config);
         await _lock.WaitAsync();
         try
         {
             await StopCurrentAsync();
 
-            var config = ModelCatalog.BuildConfig(model);
+            var model = config.Model;
             var run = new RunInfo
             {
                 RunId = _nextRunId++,

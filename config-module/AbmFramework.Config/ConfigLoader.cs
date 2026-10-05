@@ -83,12 +83,13 @@ public static class ConfigLoader
         if (config.AgentCount <= 0)
             errors.Add($"AgentCount must be positive (got {config.AgentCount}).");
 
-        if (config.GridWidth > 0 && config.GridHeight > 0 &&
-            config.AgentCount > config.GridWidth * config.GridHeight)
+        if (config.Model is ModelType.SIR or ModelType.Schelling &&
+            config.GridWidth > 0 && config.GridHeight > 0 &&
+            config.AgentCount > (long)config.GridWidth * config.GridHeight)
         {
             errors.Add(
                 $"AgentCount ({config.AgentCount}) exceeds available grid cells " +
-                $"({config.GridWidth}x{config.GridHeight} = {config.GridWidth * config.GridHeight}).");
+                $"({config.GridWidth}x{config.GridHeight} = {(long)config.GridWidth * config.GridHeight}).");
         }
 
         if (config.InitialInfected < 0)
@@ -111,6 +112,8 @@ public static class ConfigLoader
 
         if (config.TickLimit <= 0)
             errors.Add($"TickLimit must be positive (got {config.TickLimit}).");
+        else if (config.TickLimit > 1_000_000)
+            errors.Add($"TickLimit cannot exceed 1,000,000 (got {config.TickLimit}).");
 
         if (string.IsNullOrWhiteSpace(config.ScenarioName))
             errors.Add("ScenarioName cannot be empty.");
@@ -131,6 +134,9 @@ public static class ConfigLoader
 
             if (config.MaxSpeed <= 0)
                 errors.Add($"MaxSpeed must be positive (got {config.MaxSpeed}).");
+
+            if (config.SeparationWeight < 0 || config.AlignmentWeight < 0 || config.CohesionWeight < 0)
+                errors.Add("Boid separation, alignment, and cohesion weights cannot be negative.");
         }
 
         if (config.Model == ModelType.AntForaging)
@@ -140,6 +146,9 @@ public static class ConfigLoader
 
             if (config.FoodPerSource <= 0)
                 errors.Add($"FoodPerSource must be positive (got {config.FoodPerSource}).");
+
+            if (config.PheromoneDepositAmount < 0)
+                errors.Add($"PheromoneDepositAmount cannot be negative (got {config.PheromoneDepositAmount}).");
 
             if (config.PheromoneDecayRate is < 0.0 or > 1.0)
                 errors.Add($"PheromoneDecayRate must be between 0.0 and 1.0 (got {config.PheromoneDecayRate}).");

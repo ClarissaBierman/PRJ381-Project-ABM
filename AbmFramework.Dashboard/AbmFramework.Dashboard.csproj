@@ -10,6 +10,7 @@
     <ProjectReference Include="..\ABM.Persistence\ABM.Persistence.csproj" />
     <ProjectReference Include="..\config-module\AbmFramework.Engine\AbmFramework.Engine.csproj" />
 	<ProjectReference Include="..\config-module\AbmFramework.Config\AbmFramework.Config.csproj" />
+	  <ProjectReference Include="..\ABM.Core\ABM.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

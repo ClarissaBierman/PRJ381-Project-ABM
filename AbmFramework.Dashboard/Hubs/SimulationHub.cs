@@ -27,14 +27,26 @@ public class SimulationHub : Hub
 
     public IReadOnlyList<ModelOption> GetModels() => ModelCatalog.Options;
 
-    public Task StartSimulation(string model)
+    public IReadOnlyDictionary<string, SimulationConfig> GetModelDefaults() =>
+        Enum.GetValues<ModelType>().ToDictionary(model => model.ToString(), ModelCatalog.BuildConfig);
+
+    public Task StartSimulation(SimulationConfig config)
     {
-        if (!Enum.TryParse<ModelType>(model, ignoreCase: true, out var parsed))
+        if (!Enum.IsDefined(config.Model))
         {
-            throw new HubException($"Unknown model '{model}'.");
+            throw new HubException($"Unknown model '{config.Model}'.");
         }
 
-        return _simulation.StartAsync(parsed);
+        try
+        {
+            ConfigLoader.Validate(config);
+        }
+        catch (ConfigValidationException ex)
+        {
+            throw new HubException(string.Join("\n", ex.Errors));
+        }
+
+        return _simulation.StartAsync(config);
     }
 
     public Task PauseSimulation() => _simulation.PauseAsync();
