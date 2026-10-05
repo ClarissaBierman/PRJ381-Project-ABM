@@ -211,6 +211,36 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void Validate_InitialInfectedCannotExceedPopulation()
+    {
+        var config = new SimulationConfig { Model = ModelType.SIR, AgentCount = 10, InitialInfected = 11 };
+
+        var exception = Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(config));
+
+        Assert.Contains(exception.Errors, error => error.Contains("cannot exceed AgentCount"));
+    }
+
+    [Fact]
+    public void Validate_TickLimitMustBePositive()
+    {
+        var config = new SimulationConfig { TickLimit = 0 };
+
+        var exception = Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(config));
+
+        Assert.Contains(exception.Errors, error => error.Contains("TickLimit"));
+    }
+
+    [Fact]
+    public void Validate_GridCapacityAppliesOnlyToModelsWithUniqueOccupancy()
+    {
+        var sir = new SimulationConfig { Model = ModelType.SIR, GridWidth = 2, GridHeight = 2, AgentCount = 5 };
+        var boids = new SimulationConfig { Model = ModelType.Boids, GridWidth = 2, GridHeight = 2, AgentCount = 5 };
+
+        Assert.Throws<ConfigValidationException>(() => ConfigLoader.Validate(sir));
+        Assert.Null(Record.Exception(() => ConfigLoader.Validate(boids)));
+    }
+
+    [Fact]
     public void LoadFromFile_UnsupportedExtension_ThrowsNotSupportedException()
     {
         var tempPath = Path.GetTempFileName();
