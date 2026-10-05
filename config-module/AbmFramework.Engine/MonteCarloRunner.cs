@@ -37,7 +37,7 @@ public sealed class MonteCarloRunner
 
             int seed = seedGenerator.Next();
 
-            var replicateConfig = Clone(baseConfig);
+            var replicateConfig = baseConfig.Clone();
             replicateConfig.RandomSeed = seed;
 
             var engine = new SimulationEngine();
@@ -53,38 +53,5 @@ public sealed class MonteCarloRunner
         }
 
         return results;
-    }
-
-    private static SimulationConfig Clone(SimulationConfig config)
-    {
-        // SimulationConfig only holds value types and strings, so a
-        // property-by-property copy is a safe, independent clone.
-        return new SimulationConfig
-        {
-            ScenarioName = config.ScenarioName,
-            Model = config.Model,
-            GridWidth = config.GridWidth,
-            GridHeight = config.GridHeight,
-            Topology = config.Topology,
-            AgentCount = config.AgentCount,
-            RandomSeed = config.RandomSeed,
-            Scheduler = config.Scheduler,
-            TickLimit = config.TickLimit,
-            InitialInfected = config.InitialInfected,
-            InfectionProbability = config.InfectionProbability,
-            RecoveryTicks = config.RecoveryTicks,
-            SimilarityThreshold = config.SimilarityThreshold,
-            GroupARatio = config.GroupARatio,
-            PerceptionRadius = config.PerceptionRadius,
-            SeparationWeight = config.SeparationWeight,
-            AlignmentWeight = config.AlignmentWeight,
-            CohesionWeight = config.CohesionWeight,
-            MaxSpeed = config.MaxSpeed,
-            FoodSources = config.FoodSources,
-            FoodPerSource = config.FoodPerSource,
-            PheromoneDepositAmount = config.PheromoneDepositAmount,
-            PheromoneDecayRate = config.PheromoneDecayRate,
-            ExplorationChance = config.ExplorationChance
-        };
     }
 }

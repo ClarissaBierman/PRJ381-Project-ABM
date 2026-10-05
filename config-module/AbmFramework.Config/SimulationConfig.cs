@@ -101,4 +101,10 @@ public sealed class SimulationConfig
     public double WolfReproductionProbability { get; set; } = 0.05;
 
     public double GrassRegrowthProbability { get; set; } = 0.03;
+
+    // Returns an independent copy, e.g. for a Monte Carlo replicate that only
+    // changes the seed. Every property is a value type or an immutable
+    // string, so a shallow copy is a full one, and new properties are
+    // picked up automatically rather than needing to be listed by hand.
+    public SimulationConfig Clone() => (SimulationConfig)MemberwiseClone();
 }

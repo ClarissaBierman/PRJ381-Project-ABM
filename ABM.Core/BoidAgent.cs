@@ -83,7 +83,20 @@ namespace ABM.Core
 
             ApplyTopology();
 
-            Position = ((int)Math.Round(X), (int)Math.Round(Y));
+            int cellX = (int)Math.Round(X);
+            int cellY = (int)Math.Round(Y);
+
+            // On a toroidal grid X can be up to just under gridWidth, which
+            // rounds to gridWidth - one past the last column - so wrap the
+            // rounded cell back onto the grid. (Bounded X never exceeds
+            // gridWidth - 1, so it can't round off the grid.)
+            if (topology == GridTopology.Toroidal)
+            {
+                cellX %= gridWidth;
+                cellY %= gridHeight;
+            }
+
+            Position = (cellX, cellY);
         }
 
         private double Distance(BoidAgent other)

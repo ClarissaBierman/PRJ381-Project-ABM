@@ -18,10 +18,17 @@ public class LiveSimulationService
     private Task? _runTask;
     private int _nextRunId = 1;
 
+    // The current run together with every tick it has produced so far, kept
+    // in one object so the CSV download can never pair one run's info with
+    // another run's ticks. Ticks are appended on the engine's thread and read
+    // by download requests, so access to the list is locked on the list.
+    private sealed record ActiveRun(RunInfo Info, List<TickStatistics> Ticks);
+    private ActiveRun? _activeRun;
+
     public const int MinTickDelayMs = 10;
     public const int MaxTickDelayMs = 1000;
 
-    public RunInfo? CurrentRun { get; private set; }
+    public RunInfo? CurrentRun => _activeRun?.Info;
     public string Status { get; private set; } = "Stopped";
     public int TickDelayMs { get; private set; } = 50;
 
@@ -52,10 +59,11 @@ public class LiveSimulationService
                 TickLimit = config.TickLimit
             };
 
+            var activeRun = new ActiveRun(run, new List<TickStatistics>());
             var engine = new SimulationEngine { TickDelayMs = TickDelayMs };
             var cts = new CancellationTokenSource();
 
-            engine.TickCompleted += (sender, stats) => OnTick(engine, run.RunId, stats, cts.Token);
+            engine.TickCompleted += (sender, stats) => OnTick(engine, activeRun, stats, cts.Token);
             engine.SimulationCompleted += (sender, e) =>
             {
                 if (!cts.IsCancellationRequested && ReferenceEquals(engine, _engine))
@@ -66,7 +74,7 @@ public class LiveSimulationService
 
             _engine = engine;
             _cts = cts;
-            CurrentRun = run;
+            _activeRun = activeRun;
 
             await _hubContext.Clients.All.SendAsync("SimulationStarted", run);
             await SetStatusAsync("Running");
@@ -114,7 +122,7 @@ public class LiveSimulationService
         try
         {
             await StopCurrentAsync();
-            CurrentRun = null;
+            _activeRun = null;
 
             await _hubContext.Clients.All.SendAsync("SimulationReset");
             await SetStatusAsync("Stopped");
@@ -168,8 +176,14 @@ public class LiveSimulationService
 
     // Runs synchronously inside the engine's tick loop, so the agent list is
     // copied before the next tick starts moving agents around.
-    private void OnTick(SimulationEngine engine, int runId, TickStatistics stats, CancellationToken token)
+    private void OnTick(SimulationEngine engine, ActiveRun activeRun, TickStatistics stats, CancellationToken token)
     {
+        lock (activeRun.Ticks)
+        {
+            activeRun.Ticks.Add(stats);
+        }
+
+        var runId = activeRun.Info.RunId;
         var tick = new TickData
         {
             RunId = runId,
@@ -240,6 +254,19 @@ public class LiveSimulationService
             Nest = nest,
             Grass = eaten ? false : null
         };
+    }
+
+    // Returns the run and a copy of its ticks so far, or null if runId is not
+    // the current run (it was reset or replaced since the page last saw it).
+    public (RunInfo Run, IReadOnlyList<TickStatistics> Ticks)? GetTickHistory(int runId)
+    {
+        var activeRun = _activeRun;
+        if (activeRun is null || activeRun.Info.RunId != runId) return null;
+
+        lock (activeRun.Ticks)
+        {
+            return (activeRun.Info, activeRun.Ticks.ToList());
+        }
     }
 
     private async Task BroadcastAsync(TickData tick, GridData grid, CancellationToken token)
