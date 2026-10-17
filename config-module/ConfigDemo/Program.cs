@@ -46,58 +46,86 @@ if (options.BatchReplicates is int replicateCount)
 
 return await RunSingleAsync(config);
 
-// --- Single run: full tick history persisted to SQLite, CSV export at the end. ---
+// --- Single run: tick history, agents and agent states saved to SQLite, CSV export at the end. ---
 static async Task<int> RunSingleAsync(SimulationConfig config)
 {
     var dbPath = Path.Combine(AppContext.BaseDirectory, "simulations.db");
     var repository = new SimulationRepository(dbPath);
 
     var simulationId = Guid.NewGuid();
-    var startedAt = DateTime.UtcNow;
 
-    var simulation = new Simulation
+    await repository.SaveSimulationAsync(new Simulation
     {
         Id = simulationId,
-        StartedAt = startedAt,
-        EndedAt = null,
+        Model = config.Model.ToString(),
         ScenarioName = config.ScenarioName,
+        Source = "Console",
+        Status = "Running",
+        StartedAt = DateTime.UtcNow,
+        Seed = config.RandomSeed,
         ConfigurationJson = JsonSerializer.Serialize(config)
-    };
-    await repository.SaveSimulationAsync(simulation);
+    });
 
-    SimulationEngine engine = new SimulationEngine();
+    await repository.SaveEnvironmentAsync(new EnvironmentRecord
+    {
+        Id = Guid.NewGuid(),
+        SimulationId = simulationId,
+        GridWidth = config.GridWidth,
+        GridHeight = config.GridHeight,
+        Topology = config.Topology.ToString(),
+        Scheduler = config.Scheduler.ToString()
+    });
 
-    engine.TickCompleted += async (sender, stats) =>
+    var engine = new SimulationEngine();
+    var ticks = new List<TickRecord>();
+    var agents = new Dictionary<int, AgentRecord>();
+    var states = new List<AgentState>();
+
+    engine.TickCompleted += (sender, stats) =>
     {
         Console.WriteLine(stats);
 
-        var tickRecord = new TickRecord
+        ticks.Add(new TickRecord
         {
             SimulationId = simulationId,
             TickNumber = stats.Tick,
-            // Only meaningful for the SIR model; 0 for every other model
-            // (their results live in stats.Metrics instead, which the
-            // current persistence schema doesn't have a column for yet).
             Susceptible = stats.Susceptible,
             Infected = stats.Infected,
-            Recovered = stats.Recovered
-        };
-        await repository.SaveTickRecordAsync(tickRecord);
+            Recovered = stats.Recovered,
+            TotalPopulation = stats.TotalPopulation,
+            Metrics = stats.Metrics
+        });
 
         var snapshot = engine.GetSnapshot();
-        var agentStates = snapshot.Agents.Select(a => new AgentState
+        foreach (var agent in snapshot.Agents)
         {
-            SimulationId = simulationId,
-            TickNumber = stats.Tick,
-            AgentId = a.Id,
-            X = a.Position.X,
-            Y = a.Position.Y,
-            // Generic across all four models: SIR stores "Susceptible" /
-            // "Infected" / "Recovered" here (unchanged from before), while
-            // Schelling/Boids/Ant Foraging store their own DisplayState.
-            HealthState = a.DisplayState
-        }).ToArray();
-        await repository.SaveAgentStatesAsync(agentStates);
+            if (!agents.TryGetValue(agent.Id, out var record))
+            {
+                record = new AgentRecord
+                {
+                    SimulationId = simulationId,
+                    AgentId = agent.Id,
+                    Breed = agent.GetType().Name.Replace("Agent", ""),
+                    FirstTick = stats.Tick
+                };
+                agents[agent.Id] = record;
+            }
+            record.LastTick = stats.Tick;
+        }
+
+        // Every 10th tick is enough to replay where the agents were.
+        if (stats.Tick % 10 == 0)
+        {
+            states.AddRange(snapshot.Agents.Select(a => new AgentState
+            {
+                SimulationId = simulationId,
+                TickNumber = stats.Tick,
+                AgentId = a.Id,
+                X = a.Position.X,
+                Y = a.Position.Y,
+                State = a.DisplayState
+            }));
+        }
     };
 
     engine.SimulationCompleted += (sender, e) =>
@@ -108,32 +136,100 @@ static async Task<int> RunSingleAsync(SimulationConfig config)
 
     await engine.StartAsync(config);
 
+    await repository.SaveAgentsAsync(agents.Values.ToList());
+    await repository.SaveTickRecordsAsync(ticks);
+    await repository.SaveAgentStatesAsync(states);
+    await repository.UpdateSimulationAsync(simulationId, "Completed", DateTime.UtcNow, ticks.Count);
+    Console.WriteLine($"Saved to the database: {repository.DatabasePath}");
+
     // Export the full tick history to CSV for external analysis
-    var ticks = await repository.GetTicksAsync(simulationId);
+    var saved = await repository.GetTicksAsync(simulationId);
     var csvPath = Path.Combine(AppContext.BaseDirectory, $"simulation-{simulationId}.csv");
-    await CsvExporter.ExportTicksAsync(ticks, csvPath);
+    await CsvExporter.ExportTicksAsync(saved, csvPath);
     Console.WriteLine($"Results exported to: {csvPath}");
 
     return 0;
 }
 
-// --- Batch run: Monte Carlo replicates, no per-tick persistence (too slow
-// for many replicates), summary CSV at the end. ---
+// --- Batch run: Monte Carlo replicates saved to the database as one batch,
+// with every replicate's ticks, plus a summary CSV at the end. ---
 static async Task<int> RunBatchAsync(SimulationConfig config, int replicateCount)
 {
     Console.WriteLine($"Running {replicateCount} Monte Carlo replicates...");
 
+    int baseSeed = config.RandomSeed ?? Random.Shared.Next();
     var runner = new MonteCarloRunner();
-    var results = await runner.RunAsync(config, replicateCount, config.RandomSeed);
+    var results = await runner.RunAsync(config, replicateCount, baseSeed);
 
     foreach (var result in results)
     {
         Console.WriteLine($"Replicate {result.ReplicateIndex} (seed={result.Seed}): {result.FinalStatistics}");
     }
 
+    var repository = new SimulationRepository(Path.Combine(AppContext.BaseDirectory, "simulations.db"));
+    var created = DateTime.UtcNow;
+    var batch = new Batch
+    {
+        Id = Guid.NewGuid(),
+        GroupId = Guid.NewGuid(),
+        Model = config.Model.ToString(),
+        CreatedAt = created,
+        Runs = results.Count,
+        BaseSeed = baseSeed,
+        TickLimit = config.TickLimit,
+        ConfigurationJson = JsonSerializer.Serialize(config),
+        SummaryJson = JsonSerializer.Serialize(ComparisonSummary.Build(config.Model, baseSeed, results),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))
+    };
+
+    var runs = results.Select(result =>
+    {
+        var simulationId = Guid.NewGuid();
+        return new BatchRun
+        {
+            Simulation = new Simulation
+            {
+                Id = simulationId,
+                Model = batch.Model,
+                ScenarioName = config.ScenarioName,
+                Source = "Console",
+                Status = "Completed",
+                StartedAt = created,
+                EndedAt = created,
+                TickCount = result.History.Count,
+                Seed = result.Seed,
+                ConfigurationJson = batch.ConfigurationJson,
+                BatchId = batch.Id,
+                RunNumber = result.ReplicateIndex + 1
+            },
+            Environment = new EnvironmentRecord
+            {
+                Id = Guid.NewGuid(),
+                SimulationId = simulationId,
+                GridWidth = config.GridWidth,
+                GridHeight = config.GridHeight,
+                Topology = config.Topology.ToString(),
+                Scheduler = config.Scheduler.ToString()
+            },
+            Ticks = result.History.Select(stats => new TickRecord
+            {
+                SimulationId = simulationId,
+                TickNumber = stats.Tick,
+                Susceptible = stats.Susceptible,
+                Infected = stats.Infected,
+                Recovered = stats.Recovered,
+                TotalPopulation = stats.TotalPopulation,
+                Metrics = stats.Metrics
+            }).ToList()
+        };
+    }).ToList();
+
+    await repository.SaveBatchAsync(batch, runs);
+    Console.WriteLine();
+    Console.WriteLine($"Batch saved to the database: {repository.DatabasePath}");
+
     var csvPath = Path.Combine(AppContext.BaseDirectory, $"monte-carlo-{config.Model}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv");
     await MonteCarloCsvExporter.ExportAsync(results, csvPath);
-    Console.WriteLine();
     Console.WriteLine($"Batch results exported to: {csvPath}");
 
     return 0;

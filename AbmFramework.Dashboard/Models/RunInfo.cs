@@ -10,4 +10,5 @@ public class RunInfo
     public int GridHeight { get; set; }
     public int AgentCount { get; set; }
     public int TickLimit { get; set; }
+    public string? HistoryId { get; set; }
 }

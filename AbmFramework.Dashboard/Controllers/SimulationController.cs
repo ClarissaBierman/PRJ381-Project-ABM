@@ -16,6 +16,28 @@ public class SimulationController : ControllerBase
         _simulation = simulation;
     }
 
+    // The same as ticks.csv, as an Excel file that opens straight into columns.
+    [HttpGet("ticks.xlsx")]
+    public IActionResult DownloadTicksExcel([FromQuery] int runId)
+    {
+        if (_simulation.GetTickHistory(runId) is not { } history)
+        {
+            return NotFound("That run is no longer available. It may have been reset or restarted.");
+        }
+
+        var records = history.Ticks.Select(stats => new TickRecord
+        {
+            TickNumber = stats.Tick,
+            Susceptible = stats.Susceptible,
+            Infected = stats.Infected,
+            Recovered = stats.Recovered,
+            Metrics = stats.Metrics
+        });
+
+        var fileName = $"{history.Run.Model}-run{history.Run.RunId}-{DateTime.Now:yyyyMMdd-HHmmss}.xlsx";
+        return File(ExcelExporter.WriteTicks(records), ExcelExporter.ContentType, fileName);
+    }
+
     // Downloads the tick-by-tick statistics of the given run so far. runId
     // guards against downloading a different run than the one on screen if
     // the simulation was restarted or reset in the meantime.

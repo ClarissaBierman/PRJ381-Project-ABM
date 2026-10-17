@@ -58,6 +58,12 @@ public class SimulationHub : Hub
         return _simulation.StartAsync(config, startPaused);
     }
 
+    // Continues a run from Past runs. Returns a message to show if it can't.
+    public Task<string?> ContinueSimulation(string historyId) =>
+        Guid.TryParse(historyId, out var id)
+            ? _simulation.ContinueAsync(id)
+            : Task.FromResult<string?>("That run could not be found.");
+
     public Task PauseSimulation() => _simulation.PauseAsync();
 
     public Task ResumeSimulation() => _simulation.ResumeAsync();

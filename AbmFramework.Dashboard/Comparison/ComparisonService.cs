@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
+using ABM.Persistence.Models;
 using AbmFramework.Config;
+using AbmFramework.Dashboard.History;
 using AbmFramework.Engine;
 
 namespace AbmFramework.Dashboard.Comparison;
@@ -41,6 +43,13 @@ public class ComparisonService
     private readonly SemaphoreSlim _slots = new(2, 2);
 
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new();
+
+    private readonly HistoryWriter _history;
+
+    public ComparisonService(HistoryWriter history)
+    {
+        _history = history;
+    }
 
     // The model's default settings, used to fill in the Compare panel.
     public SimulationConfig GetDefaults(string model) => ModelCatalog.BuildConfig(ParseModel(model));
@@ -84,7 +93,9 @@ public class ComparisonService
                 () => new MonteCarloRunner().RunAsync(config, request.Runs, baseSeed, cancellationToken, progress),
                 cancellationToken);
 
-            return ComparisonSummary.Build(model, baseSeed, results);
+            var summary = ComparisonSummary.Build(model, baseSeed, results);
+            Save(request, config, baseSeed, results, summary);
+            return summary;
         }
         finally
         {
@@ -167,6 +178,72 @@ public class ComparisonService
         }
 
         return (model, config);
+    }
+
+    // Queued for the background writer, so the page gets its results straight away.
+    private void Save(
+        ComparisonRequest request,
+        SimulationConfig config,
+        int baseSeed,
+        IReadOnlyList<MonteCarloReplicateResult> results,
+        ComparisonSummary summary)
+    {
+        if (!_history.Enabled) return;
+
+        var created = DateTime.UtcNow;
+        var batch = new Batch
+        {
+            Id = Guid.NewGuid(),
+            GroupId = Guid.TryParse(request.GroupId, out var group) ? group : Guid.NewGuid(),
+            Label = request.Label ?? "",
+            Model = config.Model.ToString(),
+            CreatedAt = created,
+            Runs = results.Count,
+            BaseSeed = baseSeed,
+            TickLimit = config.TickLimit,
+            ConfigurationJson = JsonSerializer.Serialize(config, HistoryWriter.Json),
+            PageSettingsJson = request.PageSettings is null ? null : JsonSerializer.Serialize(request.PageSettings),
+            SummaryJson = JsonSerializer.Serialize(summary, HistoryWriter.Json)
+        };
+
+        var runs = results.Select(result =>
+        {
+            var runConfig = config.Clone();
+            runConfig.RandomSeed = result.Seed;
+
+            var simulation = new Simulation
+            {
+                Id = Guid.NewGuid(),
+                Model = batch.Model,
+                ScenarioName = config.ScenarioName,
+                Source = "Compare",
+                Status = "Completed",
+                StartedAt = created,
+                EndedAt = created,
+                TickCount = result.History.Count,
+                Seed = result.Seed,
+                ConfigurationJson = JsonSerializer.Serialize(runConfig, HistoryWriter.Json),
+                BatchId = batch.Id,
+                RunNumber = result.ReplicateIndex + 1
+            };
+
+            return new BatchRun
+            {
+                Simulation = simulation,
+                Environment = new EnvironmentRecord
+                {
+                    Id = Guid.NewGuid(),
+                    SimulationId = simulation.Id,
+                    GridWidth = config.GridWidth,
+                    GridHeight = config.GridHeight,
+                    Topology = config.Topology.ToString(),
+                    Scheduler = config.Scheduler.ToString()
+                },
+                Ticks = result.History.Select(stats => LiveRunRecorder.ToRecord(simulation.Id, stats)).ToList()
+            };
+        }).ToList();
+
+        _history.Enqueue(repository => repository.SaveBatchAsync(batch, runs));
     }
 
     private static ModelType ParseModel(string model)

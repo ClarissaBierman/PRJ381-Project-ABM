@@ -427,3 +427,8 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Local SQLite databases (the dashboard keeps its own in AppData)
+*.db
+*.db-shm
+*.db-wal

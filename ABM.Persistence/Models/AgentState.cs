@@ -1,15 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
 namespace ABM.Persistence.Models
 {
     public class AgentState
     {
         public Guid SimulationId { get; set; }
 
+        // -1 is the starting layout from Setup, before the first tick runs.
         public int TickNumber { get; set; }
 
         public int AgentId { get; set; }
@@ -18,6 +13,9 @@ namespace ABM.Persistence.Models
 
         public int Y { get; set; }
 
-        public string HealthState { get; set; } = string.Empty;
+        public string State { get; set; } = string.Empty;
+
+        // Extra values for some breeds, e.g. {"energy":12.5} or {"heading":1.57,"speed":0.8}.
+        public string? PropertiesJson { get; set; }
     }
 }

@@ -1,8 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Globalization;
+using System.Text.Json;
 using ABM.Persistence.Models;
 using Microsoft.Data.Sqlite;
 
@@ -12,165 +9,273 @@ namespace ABM.Persistence
     {
         private readonly string _connectionString;
 
+        public string DatabasePath { get; }
+
         public SimulationRepository(string databasePath)
         {
-            _connectionString = $"Data Source={databasePath}";
+            DatabasePath = Path.GetFullPath(databasePath);
+            _connectionString = $"Data Source={DatabasePath}";
 
-            Database.DatabaseInitializer.Initialize(databasePath);
+            Database.DatabaseInitializer.Initialize(DatabasePath);
         }
-        private async Task<SqliteConnection> CreateOpenConnectionAsync()
+
+        private async Task<SqliteConnection> OpenAsync()
         {
             var connection = new SqliteConnection(_connectionString);
             await connection.OpenAsync();
+
+            using var pragma = connection.CreateCommand();
+            pragma.CommandText = "PRAGMA foreign_keys = ON;";
+            await pragma.ExecuteNonQueryAsync();
+
             return connection;
         }
 
+        // ------------------------------------------------------------ saving
+
         public async Task SaveSimulationAsync(Simulation simulation)
         {
-            using var connection = await CreateOpenConnectionAsync();
-
-            var command = connection.CreateCommand();
-
-            command.CommandText =
-            @"
-        INSERT INTO Simulations
-        (
-            Id,
-            StartedAt,
-            EndedAt,
-            ScenarioName,
-            ConfigurationJson
-        )
-        VALUES
-        (
-            $id,
-            $started,
-            $ended,
-            $scenario,
-            $config
-        );
-    ";
-
-            command.Parameters.AddWithValue("$id", simulation.Id.ToString());
-            command.Parameters.AddWithValue("$started", simulation.StartedAt.ToString("O"));
-
-            if (simulation.EndedAt.HasValue)
-                command.Parameters.AddWithValue("$ended", simulation.EndedAt.Value.ToString("O"));
-            else
-                command.Parameters.AddWithValue("$ended", DBNull.Value);
-
-            command.Parameters.AddWithValue("$scenario", simulation.ScenarioName);
-            command.Parameters.AddWithValue("$config", simulation.ConfigurationJson);
-
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            BindSimulation(command, simulation);
             await command.ExecuteNonQueryAsync();
         }
 
-        public async Task SaveTickRecordAsync(TickRecord record)
+        public async Task UpdateSimulationAsync(Guid simulationId, string status, DateTime? endedAt, int tickCount)
         {
-            using var connection = await CreateOpenConnectionAsync();
-
-            var command = connection.CreateCommand();
-
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
             command.CommandText =
-            @"
-        INSERT INTO TickRecords
-        (
-            SimulationId,
-            TickNumber,
-            Susceptible,
-            Infected,
-            Recovered
-        )
-        VALUES
-        (
-            $simulationId,
-            $tick,
-            $susceptible,
-            $infected,
-            $recovered
-        );
-    ";
-
-            command.Parameters.AddWithValue("$simulationId", record.SimulationId.ToString());
-            command.Parameters.AddWithValue("$tick", record.TickNumber);
-            command.Parameters.AddWithValue("$susceptible", record.Susceptible);
-            command.Parameters.AddWithValue("$infected", record.Infected);
-            command.Parameters.AddWithValue("$recovered", record.Recovered);
-
+                @"UPDATE Simulations
+                  SET Status = $status, EndedAt = $ended, TickCount = $ticks
+                  WHERE Id = $id;";
+            command.Parameters.AddWithValue("$status", status);
+            command.Parameters.AddWithValue("$ended", Value(endedAt.HasValue ? Date(endedAt.Value) : null));
+            command.Parameters.AddWithValue("$ticks", tickCount);
+            command.Parameters.AddWithValue("$id", simulationId.ToString());
             await command.ExecuteNonQueryAsync();
         }
 
-        public async Task SaveAgentStatesAsync(AgentState[] states)
+        public async Task<int> CloseUnfinishedRunsAsync(string status)
         {
-            using var connection = await CreateOpenConnectionAsync();
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                @"UPDATE Simulations
+                  SET Status = $status, EndedAt = IFNULL(EndedAt, $ended)
+                  WHERE Status = 'Running';";
+            command.Parameters.AddWithValue("$status", status);
+            command.Parameters.AddWithValue("$ended", Date(DateTime.UtcNow));
+            return await command.ExecuteNonQueryAsync();
+        }
 
+        public async Task SaveEnvironmentAsync(EnvironmentRecord environment)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            BindEnvironment(command, environment);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        public Task SaveTickRecordAsync(TickRecord record) => SaveTickRecordsAsync(new[] { record });
+
+        public async Task SaveTickRecordsAsync(IReadOnlyList<TickRecord> records)
+        {
+            if (records.Count == 0) return;
+
+            using var connection = await OpenAsync();
             using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+
+            foreach (var record in records)
+            {
+                BindTick(command, record);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            transaction.Commit();
+        }
+
+        public async Task SaveAgentsAsync(IReadOnlyList<AgentRecord> agents)
+        {
+            if (agents.Count == 0) return;
+
+            using var connection = await OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                @"INSERT INTO Agents (SimulationId, AgentId, Breed, FirstTick, LastTick)
+                  VALUES ($simulationId, $agentId, $breed, $first, $last)
+                  ON CONFLICT (SimulationId, AgentId) DO UPDATE SET LastTick = excluded.LastTick;";
+
+            foreach (var agent in agents)
+            {
+                command.Parameters.Clear();
+                command.Parameters.AddWithValue("$simulationId", agent.SimulationId.ToString());
+                command.Parameters.AddWithValue("$agentId", agent.AgentId);
+                command.Parameters.AddWithValue("$breed", agent.Breed);
+                command.Parameters.AddWithValue("$first", agent.FirstTick);
+                command.Parameters.AddWithValue("$last", agent.LastTick);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            transaction.Commit();
+        }
+
+        public async Task SaveAgentStatesAsync(IReadOnlyList<AgentState> states)
+        {
+            if (states.Count == 0) return;
+
+            using var connection = await OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                @"INSERT OR REPLACE INTO AgentStates (SimulationId, TickNumber, AgentId, X, Y, State, PropertiesJson)
+                  VALUES ($simulationId, $tick, $agentId, $x, $y, $state, $properties);";
 
             foreach (var state in states)
             {
-                var command = connection.CreateCommand();
-                command.Transaction = transaction;
-
-                command.CommandText =
-                @"
-            INSERT INTO AgentStates
-            (
-                SimulationId,
-                TickNumber,
-                AgentId,
-                X,
-                Y,
-                HealthState
-            )
-            VALUES
-            (
-                $simulationId,
-                $tick,
-                $agentId,
-                $x,
-                $y,
-                $healthState
-            );
-        ";
-
+                command.Parameters.Clear();
                 command.Parameters.AddWithValue("$simulationId", state.SimulationId.ToString());
                 command.Parameters.AddWithValue("$tick", state.TickNumber);
                 command.Parameters.AddWithValue("$agentId", state.AgentId);
                 command.Parameters.AddWithValue("$x", state.X);
                 command.Parameters.AddWithValue("$y", state.Y);
-                command.Parameters.AddWithValue("$healthState", state.HealthState);
-
+                command.Parameters.AddWithValue("$state", state.State);
+                command.Parameters.AddWithValue("$properties", Value(state.PropertiesJson));
                 await command.ExecuteNonQueryAsync();
             }
 
-            await transaction.CommitAsync();
+            transaction.Commit();
+        }
 
+        public async Task SavePatchesAsync(IReadOnlyList<PatchRecord> patches)
+        {
+            if (patches.Count == 0) return;
+
+            using var connection = await OpenAsync();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                @"INSERT OR REPLACE INTO Patches (EnvironmentId, TickNumber, X, Y, PropertiesJson)
+                  VALUES ($environmentId, $tick, $x, $y, $properties);";
+
+            foreach (var patch in patches)
+            {
+                command.Parameters.Clear();
+                command.Parameters.AddWithValue("$environmentId", patch.EnvironmentId.ToString());
+                command.Parameters.AddWithValue("$tick", patch.TickNumber);
+                command.Parameters.AddWithValue("$x", patch.X);
+                command.Parameters.AddWithValue("$y", patch.Y);
+                command.Parameters.AddWithValue("$properties", patch.PropertiesJson);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            transaction.Commit();
+        }
+
+        public async Task SaveBatchAsync(Batch batch, IReadOnlyList<BatchRun> runs)
+        {
+            using var connection = await OpenAsync();
+            using var transaction = connection.BeginTransaction();
+
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText =
+                    @"INSERT INTO Batches
+                      (Id, GroupId, Label, Model, CreatedAt, Runs, BaseSeed, TickLimit, ConfigurationJson, PageSettingsJson, SummaryJson)
+                      VALUES ($id, $group, $label, $model, $created, $runs, $seed, $ticks, $config, $page, $summary);";
+                command.Parameters.AddWithValue("$id", batch.Id.ToString());
+                command.Parameters.AddWithValue("$group", batch.GroupId.ToString());
+                command.Parameters.AddWithValue("$label", batch.Label);
+                command.Parameters.AddWithValue("$model", batch.Model);
+                command.Parameters.AddWithValue("$created", Date(batch.CreatedAt));
+                command.Parameters.AddWithValue("$runs", batch.Runs);
+                command.Parameters.AddWithValue("$seed", batch.BaseSeed);
+                command.Parameters.AddWithValue("$ticks", batch.TickLimit);
+                command.Parameters.AddWithValue("$config", batch.ConfigurationJson);
+                command.Parameters.AddWithValue("$page", Value(batch.PageSettingsJson));
+                command.Parameters.AddWithValue("$summary", batch.SummaryJson);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            using var simulationCommand = connection.CreateCommand();
+            using var environmentCommand = connection.CreateCommand();
+            using var tickCommand = connection.CreateCommand();
+            simulationCommand.Transaction = transaction;
+            environmentCommand.Transaction = transaction;
+            tickCommand.Transaction = transaction;
+
+            foreach (var run in runs)
+            {
+                BindSimulation(simulationCommand, run.Simulation);
+                await simulationCommand.ExecuteNonQueryAsync();
+
+                BindEnvironment(environmentCommand, run.Environment);
+                await environmentCommand.ExecuteNonQueryAsync();
+
+                foreach (var tick in run.Ticks)
+                {
+                    BindTick(tickCommand, tick);
+                    await tickCommand.ExecuteNonQueryAsync();
+                }
+            }
+
+            transaction.Commit();
+        }
+
+        // ----------------------------------------------------------- reading
+
+        public async Task<Simulation?> GetSimulationAsync(Guid simulationId)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT {SimulationColumns} FROM Simulations WHERE Id = $id;";
+            command.Parameters.AddWithValue("$id", simulationId.ToString());
+
+            using var reader = await command.ExecuteReaderAsync();
+            return await reader.ReadAsync() ? ReadSimulation(reader) : null;
+        }
+
+        public async Task<EnvironmentRecord?> GetEnvironmentAsync(Guid simulationId)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                @"SELECT Id, SimulationId, GridWidth, GridHeight, Topology, Scheduler
+                  FROM Environments WHERE SimulationId = $id;";
+            command.Parameters.AddWithValue("$id", simulationId.ToString());
+
+            using var reader = await command.ExecuteReaderAsync();
+            if (!await reader.ReadAsync()) return null;
+
+            return new EnvironmentRecord
+            {
+                Id = Guid.Parse(reader.GetString(0)),
+                SimulationId = Guid.Parse(reader.GetString(1)),
+                GridWidth = reader.GetInt32(2),
+                GridHeight = reader.GetInt32(3),
+                Topology = reader.GetString(4),
+                Scheduler = reader.GetString(5)
+            };
         }
 
         public async Task<TickRecord[]> GetTicksAsync(Guid simulationId)
         {
-            using var connection = await CreateOpenConnectionAsync();
-
-            var command = connection.CreateCommand();
-
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
             command.CommandText =
-            @"
-        SELECT
-            TickNumber,
-            Susceptible,
-            Infected,
-            Recovered
-        FROM TickRecords
-        WHERE SimulationId = $simulationId
-        ORDER BY TickNumber;
-    ";
-
-            command.Parameters.AddWithValue("$simulationId", simulationId.ToString());
-
-            using var reader = await command.ExecuteReaderAsync();
+                @"SELECT TickNumber, Susceptible, Infected, Recovered, TotalPopulation, MetricsJson
+                  FROM TickRecords WHERE SimulationId = $id ORDER BY TickNumber;";
+            command.Parameters.AddWithValue("$id", simulationId.ToString());
 
             var ticks = new List<TickRecord>();
-
+            using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
                 ticks.Add(new TickRecord
@@ -179,48 +284,287 @@ namespace ABM.Persistence
                     TickNumber = reader.GetInt32(0),
                     Susceptible = reader.GetInt32(1),
                     Infected = reader.GetInt32(2),
-                    Recovered = reader.GetInt32(3)
+                    Recovered = reader.GetInt32(3),
+                    TotalPopulation = reader.GetInt32(4),
+                    Metrics = JsonSerializer.Deserialize<Dictionary<string, double>>(reader.GetString(5))
+                              ?? new Dictionary<string, double>()
                 });
             }
 
             return ticks.ToArray();
         }
 
-        public async Task<Simulation?> GetSimulationAsync(Guid simulationId)
+        public async Task<AgentRecord[]> GetAgentsAsync(Guid simulationId)
         {
-            using var connection = await CreateOpenConnectionAsync();
-
-            var command = connection.CreateCommand();
-
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
             command.CommandText =
-            @"
-        SELECT
-            Id,
-            StartedAt,
-            EndedAt,
-            ScenarioName,
-            ConfigurationJson
-        FROM Simulations
-        WHERE Id = $id;
-    ";
-
+                @"SELECT AgentId, Breed, FirstTick, LastTick
+                  FROM Agents WHERE SimulationId = $id ORDER BY AgentId;";
             command.Parameters.AddWithValue("$id", simulationId.ToString());
 
+            var agents = new List<AgentRecord>();
             using var reader = await command.ExecuteReaderAsync();
-
-            if (!await reader.ReadAsync())
-                return null;
-
-            return new Simulation
+            while (await reader.ReadAsync())
             {
-                Id = Guid.Parse(reader.GetString(0)),
-                StartedAt = DateTime.Parse(reader.GetString(1)),
-                EndedAt = reader.IsDBNull(2)
-                            ? null
-                            : DateTime.Parse(reader.GetString(2)),
-                ScenarioName = reader.GetString(3),
-                ConfigurationJson = reader.GetString(4)
-            };
+                agents.Add(new AgentRecord
+                {
+                    SimulationId = simulationId,
+                    AgentId = reader.GetInt32(0),
+                    Breed = reader.GetString(1),
+                    FirstTick = reader.GetInt32(2),
+                    LastTick = reader.GetInt32(3)
+                });
+            }
+
+            return agents.ToArray();
         }
+
+        public async Task<AgentState[]> GetAgentStatesAsync(Guid simulationId)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                @"SELECT TickNumber, AgentId, X, Y, State, PropertiesJson
+                  FROM AgentStates WHERE SimulationId = $id ORDER BY TickNumber, AgentId;";
+            command.Parameters.AddWithValue("$id", simulationId.ToString());
+
+            var states = new List<AgentState>();
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                states.Add(new AgentState
+                {
+                    SimulationId = simulationId,
+                    TickNumber = reader.GetInt32(0),
+                    AgentId = reader.GetInt32(1),
+                    X = reader.GetInt32(2),
+                    Y = reader.GetInt32(3),
+                    State = reader.GetString(4),
+                    PropertiesJson = reader.IsDBNull(5) ? null : reader.GetString(5)
+                });
+            }
+
+            return states.ToArray();
+        }
+
+        public async Task<PatchRecord[]> GetPatchesAsync(Guid environmentId)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                @"SELECT TickNumber, X, Y, PropertiesJson
+                  FROM Patches WHERE EnvironmentId = $id ORDER BY TickNumber, Y, X;";
+            command.Parameters.AddWithValue("$id", environmentId.ToString());
+
+            var patches = new List<PatchRecord>();
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                patches.Add(new PatchRecord
+                {
+                    EnvironmentId = environmentId,
+                    TickNumber = reader.GetInt32(0),
+                    X = reader.GetInt32(1),
+                    Y = reader.GetInt32(2),
+                    PropertiesJson = reader.GetString(3)
+                });
+            }
+
+            return patches.ToArray();
+        }
+
+        public async Task<RunListItem[]> ListSimulationsAsync(string? source = null, string? model = null, int limit = 200)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                $@"SELECT {Prefixed("s")}, IFNULL(e.GridWidth, 0), IFNULL(e.GridHeight, 0)
+                   FROM Simulations s
+                   LEFT JOIN Environments e ON e.SimulationId = s.Id
+                   WHERE ($source IS NULL OR s.Source = $source)
+                     AND ($model IS NULL OR s.Model = $model)
+                   ORDER BY s.StartedAt DESC
+                   LIMIT $limit;";
+            command.Parameters.AddWithValue("$source", Value(source));
+            command.Parameters.AddWithValue("$model", Value(model));
+            command.Parameters.AddWithValue("$limit", limit);
+
+            var items = new List<RunListItem>();
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                items.Add(new RunListItem
+                {
+                    Simulation = ReadSimulation(reader),
+                    GridWidth = reader.GetInt32(SimulationColumnCount),
+                    GridHeight = reader.GetInt32(SimulationColumnCount + 1)
+                });
+            }
+
+            return items.ToArray();
+        }
+
+        public Task<Batch[]> ListBatchesAsync(int limit = 200) =>
+            ReadBatchesAsync("ORDER BY CreatedAt DESC LIMIT $limit", includeSummary: false,
+                command => command.Parameters.AddWithValue("$limit", limit));
+
+        public Task<Batch[]> GetBatchGroupAsync(Guid groupId) =>
+            ReadBatchesAsync("WHERE GroupId = $group ORDER BY Label", includeSummary: true,
+                command => command.Parameters.AddWithValue("$group", groupId.ToString()));
+
+        public async Task<Simulation[]> GetBatchRunsAsync(Guid batchId)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT {SimulationColumns} FROM Simulations WHERE BatchId = $id ORDER BY RunNumber;";
+            command.Parameters.AddWithValue("$id", batchId.ToString());
+
+            var runs = new List<Simulation>();
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                runs.Add(ReadSimulation(reader));
+            }
+
+            return runs.ToArray();
+        }
+
+        // ---------------------------------------------------------- deleting
+
+        public async Task<bool> DeleteSimulationAsync(Guid simulationId)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM Simulations WHERE Id = $id;";
+            command.Parameters.AddWithValue("$id", simulationId.ToString());
+            return await command.ExecuteNonQueryAsync() > 0;
+        }
+
+        public async Task<int> DeleteBatchGroupAsync(Guid groupId)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM Batches WHERE GroupId = $group;";
+            command.Parameters.AddWithValue("$group", groupId.ToString());
+            return await command.ExecuteNonQueryAsync();
+        }
+
+        // ----------------------------------------------------------- helpers
+
+        private const string SimulationColumns =
+            "Id, Model, ScenarioName, Source, Status, StartedAt, EndedAt, TickCount, Seed, ConfigurationJson, BatchId, RunNumber";
+
+        private static readonly int SimulationColumnCount = SimulationColumns.Split(',').Length;
+
+        private static string Prefixed(string alias) =>
+            string.Join(", ", SimulationColumns.Split(',').Select(c => $"{alias}.{c.Trim()}"));
+
+        private static Simulation ReadSimulation(SqliteDataReader reader) => new()
+        {
+            Id = Guid.Parse(reader.GetString(0)),
+            Model = reader.GetString(1),
+            ScenarioName = reader.GetString(2),
+            Source = reader.GetString(3),
+            Status = reader.GetString(4),
+            StartedAt = ParseDate(reader.GetString(5)),
+            EndedAt = reader.IsDBNull(6) ? null : ParseDate(reader.GetString(6)),
+            TickCount = reader.GetInt32(7),
+            Seed = reader.IsDBNull(8) ? null : reader.GetInt32(8),
+            ConfigurationJson = reader.GetString(9),
+            BatchId = reader.IsDBNull(10) ? null : Guid.Parse(reader.GetString(10)),
+            RunNumber = reader.IsDBNull(11) ? null : reader.GetInt32(11)
+        };
+
+        private async Task<Batch[]> ReadBatchesAsync(string filter, bool includeSummary, Action<SqliteCommand> bind)
+        {
+            using var connection = await OpenAsync();
+            using var command = connection.CreateCommand();
+            var summary = includeSummary ? "SummaryJson" : "''";
+            command.CommandText =
+                $@"SELECT Id, GroupId, Label, Model, CreatedAt, Runs, BaseSeed, TickLimit, ConfigurationJson, PageSettingsJson, {summary}
+                   FROM Batches {filter};";
+            bind(command);
+
+            var batches = new List<Batch>();
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                batches.Add(new Batch
+                {
+                    Id = Guid.Parse(reader.GetString(0)),
+                    GroupId = Guid.Parse(reader.GetString(1)),
+                    Label = reader.GetString(2),
+                    Model = reader.GetString(3),
+                    CreatedAt = ParseDate(reader.GetString(4)),
+                    Runs = reader.GetInt32(5),
+                    BaseSeed = reader.GetInt32(6),
+                    TickLimit = reader.GetInt32(7),
+                    ConfigurationJson = reader.GetString(8),
+                    PageSettingsJson = reader.IsDBNull(9) ? null : reader.GetString(9),
+                    SummaryJson = reader.GetString(10)
+                });
+            }
+
+            return batches.ToArray();
+        }
+
+        private static void BindSimulation(SqliteCommand command, Simulation simulation)
+        {
+            command.CommandText =
+                $@"INSERT INTO Simulations ({SimulationColumns})
+                   VALUES ($id, $model, $scenario, $source, $status, $started, $ended, $ticks, $seed, $config, $batch, $run);";
+            command.Parameters.Clear();
+            command.Parameters.AddWithValue("$id", simulation.Id.ToString());
+            command.Parameters.AddWithValue("$model", simulation.Model);
+            command.Parameters.AddWithValue("$scenario", simulation.ScenarioName);
+            command.Parameters.AddWithValue("$source", simulation.Source);
+            command.Parameters.AddWithValue("$status", simulation.Status);
+            command.Parameters.AddWithValue("$started", Date(simulation.StartedAt));
+            command.Parameters.AddWithValue("$ended", Value(simulation.EndedAt.HasValue ? Date(simulation.EndedAt.Value) : null));
+            command.Parameters.AddWithValue("$ticks", simulation.TickCount);
+            command.Parameters.AddWithValue("$seed", Value(simulation.Seed));
+            command.Parameters.AddWithValue("$config", simulation.ConfigurationJson);
+            command.Parameters.AddWithValue("$batch", Value(simulation.BatchId?.ToString()));
+            command.Parameters.AddWithValue("$run", Value(simulation.RunNumber));
+        }
+
+        private static void BindEnvironment(SqliteCommand command, EnvironmentRecord environment)
+        {
+            command.CommandText =
+                @"INSERT INTO Environments (Id, SimulationId, GridWidth, GridHeight, Topology, Scheduler)
+                  VALUES ($id, $simulationId, $width, $height, $topology, $scheduler);";
+            command.Parameters.Clear();
+            command.Parameters.AddWithValue("$id", environment.Id.ToString());
+            command.Parameters.AddWithValue("$simulationId", environment.SimulationId.ToString());
+            command.Parameters.AddWithValue("$width", environment.GridWidth);
+            command.Parameters.AddWithValue("$height", environment.GridHeight);
+            command.Parameters.AddWithValue("$topology", environment.Topology);
+            command.Parameters.AddWithValue("$scheduler", environment.Scheduler);
+        }
+
+        private static void BindTick(SqliteCommand command, TickRecord record)
+        {
+            command.CommandText =
+                @"INSERT OR REPLACE INTO TickRecords
+                  (SimulationId, TickNumber, Susceptible, Infected, Recovered, TotalPopulation, MetricsJson)
+                  VALUES ($simulationId, $tick, $susceptible, $infected, $recovered, $total, $metrics);";
+            command.Parameters.Clear();
+            command.Parameters.AddWithValue("$simulationId", record.SimulationId.ToString());
+            command.Parameters.AddWithValue("$tick", record.TickNumber);
+            command.Parameters.AddWithValue("$susceptible", record.Susceptible);
+            command.Parameters.AddWithValue("$infected", record.Infected);
+            command.Parameters.AddWithValue("$recovered", record.Recovered);
+            command.Parameters.AddWithValue("$total", record.TotalPopulation);
+            command.Parameters.AddWithValue("$metrics", JsonSerializer.Serialize(record.Metrics));
+        }
+
+        private static object Value(object? value) => value ?? DBNull.Value;
+
+        private static string Date(DateTime value) =>
+            value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+
+        private static DateTime ParseDate(string value) =>
+            DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
     }
 }
