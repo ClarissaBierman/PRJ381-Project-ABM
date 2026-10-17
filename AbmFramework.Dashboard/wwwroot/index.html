@@ -15,6 +15,7 @@
         })();
     </script>
     <link rel="stylesheet" href="css/compare.css?v=2" />
+    <link rel="stylesheet" href="css/history.css?v=1" />
     <style>
         :root {
             --bg: #f5f5f5;
@@ -172,6 +173,33 @@
             opacity: 0.45;
             cursor: default;
         }
+
+        .download-menu { position: relative; display: inline-block; }
+
+        .download-options {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            z-index: 60;
+            display: flex;
+            flex-direction: column;
+            min-width: 150px;
+            padding: 4px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+        }
+
+        .download-options[hidden] { display: none; }
+
+        .download-options button {
+            border: none;
+            text-align: left;
+            background: none;
+        }
+
+        .download-options button:hover, .download-options button:focus { background: var(--soft); outline: none; }
 
         .speed {
             display: flex;
@@ -654,7 +682,14 @@
             <button id="goButton" disabled title="Run until paused">Run</button>
             <button id="stepButton" disabled title="Run a single tick">Step</button>
             <button id="resetButton" disabled>Reset</button><span class="info" tabindex="0" data-tip="Setup builds the world with your settings but does not run it yet, so you can check it first. Run plays it, press it again to pause. Step moves forward one tick at a time. Reset clears everything.">i</span>
-            <button id="downloadButton" disabled>Download CSV</button>
+            <div class="download-menu">
+                <button id="downloadButton" disabled aria-haspopup="true" aria-expanded="false" title="Download the statistics of every tick in this run">Download &#9662;</button>
+                <div id="downloadOptions" class="download-options" role="menu" hidden>
+                    <button type="button" role="menuitem" data-format="xlsx">Excel (.xlsx)</button>
+                    <button type="button" role="menuitem" data-format="csv">CSV</button>
+                </div>
+            </div>
+            <button id="historyButton" title="See the runs and comparisons saved in the database">Past runs</button>
             <div class="speed">
                 <label for="speedSlider">Speed:</label>
                 <span class="speed-end">Slow</span>
@@ -778,7 +813,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
     <script src="js/grid.js"></script>
-    <script src="js/compare.js?v=3"></script>
+    <script src="js/compare.js?v=5"></script>
+    <script src="js/history.js?v=3"></script>
 
     <script>
         const modelSelect = document.getElementById("modelSelect");
@@ -1267,6 +1303,31 @@
             statsChart.update("none");
         }
 
+        // Many ticks at once (a continued run being shown again), with one chart redraw at the end.
+        function addTicks(ticks) {
+            ticks.forEach(tick => {
+                const values = currentRun && currentRun.model === "SIR"
+                    ? { Susceptible: tick.susceptible, Infected: tick.infected, Recovered: tick.recovered }
+                    : {};
+                Object.assign(values, tick.metrics || {});
+                Object.entries(values).forEach(([key, value]) => ensureSeries(key).push({ x: tick.tick, y: value }));
+                if (tick === ticks[ticks.length - 1]) updateMonitors(tick.tick + 1, values);
+            });
+            statsChart.update("none");
+        }
+
+        // Called from Past runs: shows the run's settings, then asks the server
+        // to replay it to where it stopped.
+        async function continueSavedRun(run) {
+            pendingConfigs[run.model] = { ...run.configuration, randomSeed: run.seed };
+            modelSelect.value = run.model;
+            activePending = null;
+            renderConfiguration(run.model);
+            validationErrors.textContent = "";
+            const problem = await connection.invoke("ContinueSimulation", run.id);
+            if (problem) validationErrors.textContent = problem;
+        }
+
         function setStatus(status) {
             currentStatus = status;
             statusBadge.textContent = status;
@@ -1657,6 +1718,16 @@
             addTick(tick);
         });
 
+        connection.on("ReceiveTickHistory", ticks => {
+            if (!currentRun || ticks.length === 0 || ticks[0].runId !== currentRun.runId) return;
+            tickCounter.textContent = `Tick ${ticks[ticks.length - 1].tick + 1} / ${currentRun.tickLimit}`;
+            addTicks(ticks);
+        });
+
+        connection.on("SimulationNotice", message => {
+            validationErrors.textContent = message;
+        });
+
         connection.on("ReceiveGrid", grid => {
             if (!currentRun || grid.runId !== currentRun.runId) return;
             drawGrid(grid);
@@ -1690,22 +1761,37 @@
 
         // Fetches the file rather than navigating to it, so a failed download
         // shows a message instead of replacing the dashboard with an error page.
-        downloadButton.addEventListener("click", async () => {
-            if (!currentRun) return;
+        const downloadOptions = document.getElementById("downloadOptions");
+
+        function showDownloadOptions(open) {
+            downloadOptions.hidden = !open;
+            downloadButton.setAttribute("aria-expanded", String(open));
+        }
+
+        downloadButton.addEventListener("click", () => showDownloadOptions(downloadOptions.hidden));
+        document.addEventListener("click", e => {
+            if (!e.target.closest(".download-menu")) showDownloadOptions(false);
+        });
+
+        downloadOptions.addEventListener("click", async e => {
+            const option = e.target.closest("button[data-format]");
+            if (!option || !currentRun) return;
+            showDownloadOptions(false);
+            const format = option.dataset.format;
             try {
-                const response = await fetch(`api/simulation/ticks.csv?runId=${currentRun.runId}`);
+                const response = await fetch(`api/simulation/ticks.${format}?runId=${currentRun.runId}`);
                 if (!response.ok) throw new Error(await response.text() || response.statusText);
 
                 const disposition = response.headers.get("Content-Disposition") || "";
                 const match = disposition.match(/filename="?([^";]+)"?/);
                 const link = document.createElement("a");
                 link.href = URL.createObjectURL(await response.blob());
-                link.download = match ? match[1] : "simulation-ticks.csv";
+                link.download = match ? match[1] : `simulation-ticks.${format}`;
                 link.click();
                 URL.revokeObjectURL(link.href);
             } catch (err) {
                 console.error(err);
-                alert("Could not download the CSV: " + err.message);
+                validationErrors.textContent = "Could not download the file: " + err.message;
             }
         });
 

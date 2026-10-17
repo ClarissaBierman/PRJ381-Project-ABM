@@ -18,6 +18,12 @@ public class ComparisonRequest
     // label progress messages.
     public string Label { get; set; } = "";
 
+    // Ties setting A and setting B of one comparison together in the database.
+    public string? GroupId { get; set; }
+
+    // The slider values as the panel shows them, saved so the panel can be filled in again.
+    public Dictionary<string, JsonElement>? PageSettings { get; set; }
+
     // Settings that differ from the model's defaults, keyed by
     // SimulationConfig property name (e.g. "infectionProbability": 0.2).
     // Using the property names means new sliders need no server change.

@@ -1,27 +1,56 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using ABM.Persistence.Models;
+﻿using ABM.Persistence.Models;
 
 namespace ABM.Persistence
 {
     public interface IRepository
     {
-        /// Creates a new simulation record.
         Task SaveSimulationAsync(Simulation simulation);
 
-        /// Saves aggregate S/I/R values for a completed tick.
+        Task UpdateSimulationAsync(Guid simulationId, string status, DateTime? endedAt, int tickCount);
+
+        // Runs still marked "Running" when the program last closed get the given status instead.
+        Task<int> CloseUnfinishedRunsAsync(string status);
+
+        Task SaveEnvironmentAsync(EnvironmentRecord environment);
+
         Task SaveTickRecordAsync(TickRecord record);
 
-        /// Saves the state of every agent for one simulation tick.
-        Task SaveAgentStatesAsync(AgentState[] states);
+        Task SaveTickRecordsAsync(IReadOnlyList<TickRecord> records);
 
-        /// Returns all recorded ticks for a simulation.
+        // Adds new agents and updates LastTick for ones already saved.
+        Task SaveAgentsAsync(IReadOnlyList<AgentRecord> agents);
+
+        Task SaveAgentStatesAsync(IReadOnlyList<AgentState> states);
+
+        Task SavePatchesAsync(IReadOnlyList<PatchRecord> patches);
+
+        // Saves a finished Compare batch and every run in it in one go.
+        Task SaveBatchAsync(Batch batch, IReadOnlyList<BatchRun> runs);
+
+        Task<Simulation?> GetSimulationAsync(Guid simulationId);
+
+        Task<EnvironmentRecord?> GetEnvironmentAsync(Guid simulationId);
+
         Task<TickRecord[]> GetTicksAsync(Guid simulationId);
 
-        /// Returns a simulation by its ID.
-        Task<Simulation?> GetSimulationAsync(Guid simulationId);
+        Task<AgentRecord[]> GetAgentsAsync(Guid simulationId);
+
+        Task<AgentState[]> GetAgentStatesAsync(Guid simulationId);
+
+        Task<PatchRecord[]> GetPatchesAsync(Guid environmentId);
+
+        // Newest first. source and model are optional filters.
+        Task<RunListItem[]> ListSimulationsAsync(string? source = null, string? model = null, int limit = 200);
+
+        // Newest first, without the summary JSON.
+        Task<Batch[]> ListBatchesAsync(int limit = 200);
+
+        Task<Batch[]> GetBatchGroupAsync(Guid groupId);
+
+        Task<Simulation[]> GetBatchRunsAsync(Guid batchId);
+
+        Task<bool> DeleteSimulationAsync(Guid simulationId);
+
+        Task<int> DeleteBatchGroupAsync(Guid groupId);
     }
 }

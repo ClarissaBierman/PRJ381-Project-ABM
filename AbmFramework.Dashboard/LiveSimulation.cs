@@ -1,5 +1,8 @@
+using System.Text.Json;
 using ABM.Core;
+using ABM.Persistence.Models;
 using AbmFramework.Config;
+using AbmFramework.Dashboard.History;
 using AbmFramework.Dashboard.Hubs;
 using AbmFramework.Dashboard.Models;
 using AbmFramework.Engine;
@@ -11,6 +14,7 @@ public class LiveSimulationService
 {
     private readonly IHubContext<SimulationHub> _hubContext;
     private readonly ILogger<LiveSimulationService> _logger;
+    private readonly HistoryWriter _history;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     private SimulationEngine? _engine;
@@ -22,7 +26,10 @@ public class LiveSimulationService
     // in one object so the CSV download can never pair one run's info with
     // another run's ticks. Ticks are appended on the engine's thread and read
     // by download requests, so access to the list is locked on the list.
-    private sealed record ActiveRun(RunInfo Info, List<TickStatistics> Ticks);
+    private sealed record ActiveRun(RunInfo Info, List<TickStatistics> Ticks, LiveRunRecorder? Recorder, ContinueFrom? Replay);
+
+    // A saved run being continued: replay its first SavedTicks ticks, then pause there.
+    private sealed record ContinueFrom(int SavedTicks, TickRecord? LastSaved);
     private ActiveRun? _activeRun;
     private GridData? _lastGrid;
 
@@ -34,17 +41,94 @@ public class LiveSimulationService
     public int TickDelayMs { get; private set; } = 50;
     public GridData? LastGrid => _lastGrid;
 
-    public LiveSimulationService(IHubContext<SimulationHub> hubContext, ILogger<LiveSimulationService> logger)
+    public LiveSimulationService(IHubContext<SimulationHub> hubContext, ILogger<LiveSimulationService> logger, HistoryWriter history)
     {
         _hubContext = hubContext;
         _logger = logger;
+        _history = history;
+    }
+
+    // The database id of the run on screen, if it is being saved.
+    public Guid? CurrentHistoryId => _activeRun?.Recorder?.SimulationId;
+
+    // Called when the dashboard is closing: saves what the current run has so far.
+    public void SaveForShutdown()
+    {
+        _activeRun?.Recorder?.Finish("Stopped", null);
+    }
+
+    // Writes the ticks the current run has buffered, so a read straight
+    // afterwards sees everything up to now.
+    public Task FlushHistoryAsync()
+    {
+        _activeRun?.Recorder?.Flush();
+        return _history.WhenIdleAsync();
     }
 
     // startPaused is the dashboard's Setup button: agents are created and drawn
     // at tick 0, then the run waits for Go or Go once.
-    public async Task StartAsync(SimulationConfig config, bool startPaused = false)
+    public Task StartAsync(SimulationConfig config, bool startPaused = false)
     {
         ConfigLoader.Validate(config);
+
+        // Every run gets a seed, even with the box left empty, so a saved run
+        // can always be replayed and continued later.
+        if (config.RandomSeed is null)
+        {
+            config = config.Clone();
+            config.RandomSeed = Random.Shared.Next();
+        }
+
+        return StartCoreAsync(config, startPaused, null, null);
+    }
+
+    // Continue on a run from Past runs. Returns a message if it can't be continued.
+    public async Task<string?> ContinueAsync(Guid historyId)
+    {
+        if (!_history.Enabled) return _history.Problem ?? "Saving is turned off, so there is nothing to continue.";
+        if (historyId == CurrentHistoryId) return "That run is already on screen. Press Run to carry on.";
+
+        await _history.WhenIdleAsync();
+        var repository = _history.Repository!;
+        var saved = await repository.GetSimulationAsync(historyId);
+        if (saved is null || saved.Source != "Live") return "That run is not in the database any more.";
+        if (saved.Seed is null) return "This run was saved without a seed, so it can't be replayed exactly.";
+        if (saved.TickCount <= 0) return "This run has no ticks to continue from.";
+
+        SimulationConfig? config;
+        try
+        {
+            config = JsonSerializer.Deserialize<SimulationConfig>(saved.ConfigurationJson, HistoryWriter.Json);
+        }
+        catch (JsonException)
+        {
+            config = null;
+        }
+
+        if (config is null) return "The saved settings for this run could not be read.";
+        if (saved.TickCount >= config.TickLimit) return "This run already reached the end of its run length.";
+
+        config.RandomSeed = saved.Seed;
+        try
+        {
+            ConfigLoader.Validate(config);
+        }
+        catch (ConfigValidationException ex)
+        {
+            return string.Join(" ", ex.Errors);
+        }
+
+        var environment = await repository.GetEnvironmentAsync(historyId);
+        var ticks = await repository.GetTicksAsync(historyId);
+        var lastSaved = ticks.LastOrDefault(t => t.TickNumber == saved.TickCount - 1);
+
+        var recorder = LiveRunRecorder.Continue(_history, config, historyId, environment?.Id ?? Guid.NewGuid(), saved.TickCount);
+        await StartCoreAsync(config, false, recorder, new ContinueFrom(saved.TickCount, lastSaved));
+        return null;
+    }
+
+    private async Task StartCoreAsync(SimulationConfig config, bool startPaused, LiveRunRecorder? continuing, ContinueFrom? replay)
+    {
         await _lock.WaitAsync();
         try
         {
@@ -63,13 +147,22 @@ public class LiveSimulationService
                 TickLimit = config.TickLimit
             };
 
-            var activeRun = new ActiveRun(run, new List<TickStatistics>());
-            var engine = new SimulationEngine { TickDelayMs = TickDelayMs, StartPaused = startPaused };
+            var recorder = continuing ?? (_history.Enabled ? new LiveRunRecorder(_history, config) : null);
+            run.HistoryId = recorder?.SimulationId.ToString();
+
+            var activeRun = new ActiveRun(run, new List<TickStatistics>(), recorder, replay);
+
+            // While replaying a continued run there is no delay between ticks.
+            var engine = new SimulationEngine { TickDelayMs = replay is null ? TickDelayMs : 0, StartPaused = startPaused };
             var cts = new CancellationTokenSource();
 
             engine.SimulationInitialised += (sender, e) =>
             {
-                var grid = BuildGridData(engine.GetSnapshot(), run.RunId);
+                var snapshot = engine.GetSnapshot();
+                recorder?.OnInitialised(snapshot);
+                if (replay is not null) return;
+
+                var grid = BuildGridData(snapshot, run.RunId);
                 _lastGrid = grid;
                 _ = BroadcastGridAsync(grid, cts.Token);
             };
@@ -79,6 +172,7 @@ public class LiveSimulationService
             {
                 if (!cts.IsCancellationRequested && ReferenceEquals(engine, _engine))
                 {
+                    recorder?.Finish("Completed", engine.GetSnapshot());
                     _ = SetStatusAsync("Completed");
                 }
             };
@@ -89,9 +183,9 @@ public class LiveSimulationService
             _lastGrid = null;
 
             await _hubContext.Clients.All.SendAsync("SimulationStarted", run);
-            await SetStatusAsync(startPaused ? "Ready" : "Running");
+            await SetStatusAsync(replay is not null ? "Loading" : startPaused ? "Ready" : "Running");
 
-            _runTask = Task.Run(() => RunAsync(engine, config, cts.Token));
+            _runTask = Task.Run(() => RunAsync(engine, config, recorder, cts.Token));
         }
         finally
         {
@@ -104,6 +198,7 @@ public class LiveSimulationService
         if (_engine is null || !_engine.IsRunning) return;
 
         _engine.Pause();
+        _activeRun?.Recorder?.Flush();
         await SetStatusAsync("Paused");
     }
 
@@ -157,7 +252,7 @@ public class LiveSimulationService
         }
     }
 
-    private async Task RunAsync(SimulationEngine engine, SimulationConfig config, CancellationToken token)
+    private async Task RunAsync(SimulationEngine engine, SimulationConfig config, LiveRunRecorder? recorder, CancellationToken token)
     {
         try
         {
@@ -169,6 +264,7 @@ public class LiveSimulationService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Simulation run failed");
+            recorder?.Finish("Error", null);
             await SetStatusAsync("Error");
         }
     }
@@ -190,12 +286,29 @@ public class LiveSimulationService
             }
         }
 
+        if (_activeRun?.Recorder is { } recorder)
+        {
+            recorder.Finish("Stopped", TrySnapshot(_engine));
+        }
+
         _engine?.Reset();
         _cts.Dispose();
 
         _engine = null;
         _cts = null;
         _runTask = null;
+    }
+
+    private static SimulationSnapshot? TrySnapshot(SimulationEngine? engine)
+    {
+        try
+        {
+            return engine?.GetSnapshot();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     // Runs synchronously inside the engine's tick loop, so the agent list is
@@ -218,11 +331,74 @@ public class LiveSimulationService
             Metrics = stats.Metrics
         };
 
-        var grid = BuildGridData(engine.GetSnapshot(), runId);
+        var snapshot = engine.GetSnapshot();
+        activeRun.Recorder?.OnTick(stats, snapshot);
+
+        if (activeRun.Replay is { } replay && stats.Tick < replay.SavedTicks)
+        {
+            if (stats.Tick < replay.SavedTicks - 1) return;
+
+            // Back where the saved run stopped: pause here and show it.
+            engine.Pause();
+            engine.TickDelayMs = TickDelayMs;
+            var reached = BuildGridData(snapshot, runId);
+            _lastGrid = reached;
+            _ = FinishReplayAsync(activeRun, reached, stats, replay.LastSaved, token);
+            return;
+        }
+
+        var grid = BuildGridData(snapshot, runId);
         _lastGrid = grid;
 
         _ = BroadcastAsync(tick, grid, token);
     }
+
+    // Sends the replayed ticks to the page in one go, then the grid, then pauses.
+    private async Task FinishReplayAsync(ActiveRun activeRun, GridData grid, TickStatistics reached, TickRecord? lastSaved, CancellationToken token)
+    {
+        try
+        {
+            List<TickData> history;
+            lock (activeRun.Ticks)
+            {
+                history = activeRun.Ticks.Select(s => new TickData
+                {
+                    RunId = activeRun.Info.RunId,
+                    Tick = s.Tick,
+                    Susceptible = s.Susceptible,
+                    Infected = s.Infected,
+                    Recovered = s.Recovered,
+                    Metrics = s.Metrics
+                }).ToList();
+            }
+
+            await _hubContext.Clients.All.SendAsync("ReceiveTickHistory", history, token);
+            await _hubContext.Clients.All.SendAsync("ReceiveGrid", grid, token);
+            await SetStatusAsync("Paused");
+
+            if (lastSaved is not null && !SameResult(reached, lastSaved))
+            {
+                _logger.LogWarning("Continued run {Id} did not replay to the same values", activeRun.Recorder?.SimulationId);
+                await _hubContext.Clients.All.SendAsync("SimulationNotice",
+                    "This run did not replay exactly the same as when it was saved (the model code may have changed), so it carries on from a slightly different point.",
+                    token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to show the continued run");
+        }
+    }
+
+    private static bool SameResult(TickStatistics stats, TickRecord saved) =>
+        stats.Susceptible == saved.Susceptible &&
+        stats.Infected == saved.Infected &&
+        stats.Recovered == saved.Recovered &&
+        stats.Metrics.Count == saved.Metrics.Count &&
+        stats.Metrics.All(m => saved.Metrics.TryGetValue(m.Key, out var v) && Math.Abs(v - m.Value) < 1e-9);
 
     private static GridData BuildGridData(SimulationSnapshot snapshot, int runId)
     {

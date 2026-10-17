@@ -135,6 +135,7 @@
                     <div class="cmp-actions">
                         <button type="button" class="primary" id="cmpRun">Run comparison</button>
                         <button type="button" id="cmpCancel" hidden>Cancel</button>
+                        <button type="button" id="cmpXlsx" hidden>Download summary Excel</button>
                         <button type="button" id="cmpCsv" hidden>Download summary CSV</button>
                     </div>
 
@@ -160,6 +161,7 @@
             run: overlay.querySelector("#cmpRun"),
             cancel: overlay.querySelector("#cmpCancel"),
             csv: overlay.querySelector("#cmpCsv"),
+            xlsx: overlay.querySelector("#cmpXlsx"),
             progressCard: overlay.querySelector("#cmpProgressCard"),
             progressLabel: overlay.querySelector("#cmpProgressLabel"),
             progressPct: overlay.querySelector("#cmpProgressPct"),
@@ -176,6 +178,7 @@
         el.run.addEventListener("click", runComparison);
         el.cancel.addEventListener("click", () => connection().then((c) => c.invoke("CancelComparison")).catch(() => { }));
         el.csv.addEventListener("click", downloadCsv);
+        el.xlsx.addEventListener("click", downloadExcel);
     }
 
     function addButton() {
@@ -187,7 +190,7 @@
         button.addEventListener("click", openPanel);
 
         const host = document.querySelector(".controls");
-        const anchor = document.getElementById("downloadButton");
+        const anchor = document.querySelector(".download-menu") || document.getElementById("downloadButton");
         if (host && anchor && anchor.parentElement === host) anchor.after(button);
         else if (host) host.appendChild(button);
         else document.querySelector("header")?.appendChild(button);
@@ -243,7 +246,7 @@
         state.results = [];
         el.results.innerHTML = "";
         el.progressCard.hidden = true;
-        el.csv.hidden = true;
+        el.csv.hidden = el.xlsx.hidden = true;
         destroyChart();
         el.sets.innerHTML = "";     // the old model's values do not carry over
         renderSets();
@@ -425,6 +428,9 @@
         // comes from the settings and not from luck with the seeds.
         const baseSeed = seed ?? Math.floor(Math.random() * 2147483647);
 
+        // A and B share one id so Past runs keeps them together.
+        const groupId = newId();
+
         state.running = true;
         state.results = [];
         state.runs = runs;
@@ -433,7 +439,7 @@
         state.lastLabel = "";
         el.run.disabled = true;
         el.cancel.hidden = false;
-        el.csv.hidden = true;
+        el.csv.hidden = el.xlsx.hidden = true;
         el.results.innerHTML = "";
         destroyChart();
         setProgress(0, labels[0], 0);
@@ -451,6 +457,8 @@
                     runs,
                     seed: baseSeed,
                     label,
+                    groupId,
+                    pageSettings: readSet(label),
                     settings
                 });
                 state.results.push({ label, summary, settings: readSet(label) });
@@ -462,7 +470,7 @@
             el.progressPct.textContent = "100%";
             el.bar.firstElementChild.style.width = "100%";
             renderResults();
-            el.csv.hidden = false;
+            el.csv.hidden = el.xlsx.hidden = false;
         } catch (err) {
             el.progressCard.hidden = true;
             showError(cleanError(err));
@@ -679,62 +687,92 @@
 
     const csvLine = (cells) => cells.map((c) => csvCell(csvNum(c))).join(",");
 
-    function buildCsv() {
+    // The summary as rows of cells, used for both the CSV and the Excel file.
+    function buildRows() {
         const lines = [];
         const two = state.results.length > 1;
         const first = state.results[0].summary;
 
-        lines.push(csvLine(["Compare runs summary"]));
-        lines.push(csvLine(["Model", first.model]));
-        lines.push(csvLine(["Runs per setting", first.runCount]));
-        lines.push(csvLine(["Base seed", first.baseSeed]));
-        lines.push(csvLine(["Ticks per run", first.tickLimit]));
+        lines.push(["Compare runs summary"]);
+        lines.push(["Model", first.model]);
+        lines.push(["Runs per setting", first.runCount]);
+        lines.push(["Base seed", first.baseSeed]);
+        lines.push(["Ticks per run", first.tickLimit]);
 
         state.results.forEach((r) => {
             const { summary: s, label } = r;
             const prefix = two ? `Setting ${label}` : "";
-            lines.push("");
-            if (two) lines.push(csvLine([prefix]));
-            lines.push(csvLine(["Settings", Object.entries(r.settings).map(([k, v]) => `${k}=${v}`).join("; ")]));
+            lines.push([]);
+            if (two) lines.push([prefix]);
+            lines.push(["Settings", Object.entries(r.settings).map(([k, v]) => `${k}=${v}`).join("; ")]);
 
-            lines.push("");
-            lines.push(csvLine(["Run", "Seed", ...s.columns.map((c) => c.label)]));
-            s.rows.forEach((row) => lines.push(csvLine([row.run, row.seed, ...row.values])));
+            lines.push([]);
+            lines.push(["Run", "Seed", ...s.columns.map((c) => c.label)]);
+            s.rows.forEach((row) => lines.push([row.run, row.seed, ...row.values]));
 
-            lines.push("");
-            lines.push(csvLine(["Statistic", ...s.columns.map((c) => c.label)]));
+            lines.push([]);
+            lines.push(["Statistic", ...s.columns.map((c) => c.label)]);
             [["Average", "mean"], ["Lowest", "min"], ["Highest", "max"], ["Std deviation", "stdDev"]]
-                .forEach(([name, field]) => lines.push(csvLine([name, ...s.stats.map((st) => st[field])])));
+                .forEach(([name, field]) => lines.push([name, ...s.stats.map((st) => st[field])]));
 
             if (s.series.length) {
-                lines.push("");
-                lines.push(csvLine(["Over time (average, lowest, highest across runs)"]));
+                lines.push([]);
+                lines.push(["Over time (average, lowest, highest across runs)"]);
                 const header = ["Tick"];
                 s.series.forEach((se) => {
                     const col = s.columns.find((c) => c.key === se.key);
                     const name = col.seriesLabel || col.label;
                     header.push(`${name} average`, `${name} lowest`, `${name} highest`);
                 });
-                lines.push(csvLine(header));
+                lines.push(header);
                 const n = s.series[0].ticks.length;
                 for (let i = 0; i < n; i++) {
                     const row = [s.series[0].ticks[i]];
                     s.series.forEach((se) => row.push(se.mean[i], se.min[i], se.max[i]));
-                    lines.push(csvLine(row));
+                    lines.push(row);
                 }
             }
         });
 
         if (two) {
             const [a, b] = state.results.map((r) => r.summary);
-            lines.push("");
-            lines.push(csvLine(["Setting B compared with setting A (average)"]));
-            lines.push(csvLine(["Value", "A average", "B average", "B minus A"]));
+            lines.push([]);
+            lines.push(["Setting B compared with setting A (average)"]);
+            lines.push(["Value", "A average", "B average", "B minus A"]);
             a.columns.forEach((c, i) =>
-                lines.push(csvLine([c.label, a.stats[i].mean, b.stats[i].mean, b.stats[i].mean - a.stats[i].mean])));
+                lines.push([c.label, a.stats[i].mean, b.stats[i].mean, b.stats[i].mean - a.stats[i].mean]));
         }
 
-        return lines.join("\r\n") + "\r\n";
+        return lines;
+    }
+
+    function buildCsv() {
+        return buildRows().map((row) => row.length ? csvLine(row) : "").join("\r\n") + "\r\n";
+    }
+
+    async function downloadExcel() {
+        if (state.results.length === 0) return;
+        hideError();
+        const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+        const rows = buildRows().map((row) => row.map((c) => csvNum(c)));
+        try {
+            const response = await fetch("api/export/xlsx", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fileName: `compare-${state.model}-${stamp}.xlsx`, sheetName: "Compare", rows })
+            });
+            if (!response.ok) throw new Error(await response.text() || response.statusText);
+            const url = URL.createObjectURL(await response.blob());
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `compare-${state.model}-${stamp}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (err) {
+            showError("Could not make the Excel file: " + err.message);
+        }
     }
 
     function downloadCsv() {
@@ -751,6 +789,51 @@
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
+
+    // ------------------------------------------------------- saved results
+
+    function newId() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+            (c ^ (Math.random() * 16) >> (c / 4)).toString(16));
+    }
+
+    // Opens a comparison saved in the database: fills in the settings it used
+    // and shows its results without running anything again.
+    async function showSaved(saved) {
+        await openPanel();
+        if (state.running) {
+            showError("Wait for the comparison that is running to finish first.");
+            return;
+        }
+
+        el.model.value = saved.model;
+        await loadModel(saved.model);
+
+        const results = saved.results;
+        const two = results.length > 1;
+        state.twoSettings = two;
+        el.two.checked = two;
+        el.sets.className = "cmp-sets" + (two ? " two" : "");
+        el.sets.innerHTML = "";
+        results.slice(0, 2).forEach((r, i) => el.sets.appendChild(buildSet(two ? (r.label || "AB"[i]) : "A", r.pageSettings || null)));
+        updateDifferences();
+
+        const first = results[0].summary;
+        el.runs.value = first.runCount;
+        el.seed.value = first.baseSeed;
+
+        state.results = results.map((r, i) => ({ label: r.label || "AB"[i], summary: r.summary, settings: r.pageSettings || {} }));
+        el.progressCard.hidden = true;
+        renderResults();
+        el.csv.hidden = el.xlsx.hidden = false;
+
+        const when = new Date(saved.createdAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+        el.results.insertAdjacentHTML("afterbegin",
+            `<div class="cmp-card cmp-saved-note">Saved comparison from ${esc(when)}. Press <strong>Run comparison</strong> to run it again.</div>`);
+    }
+
+    window.abmCompare = { showSaved };
 
     // ------------------------------------------------------------------ errors
 

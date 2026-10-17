@@ -1,0 +1,106 @@
+/* Past runs panel. Builds on the Compare panel's .cmp styles. */
+
+.hist-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 14px 22px;
+}
+
+.hist-tabs {
+    display: inline-flex;
+    border: 1px solid #b0b8cc;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-right: auto;
+}
+
+.cmp .hist-tabs button {
+    border: none;
+    border-radius: 0;
+    padding: 9px 18px;
+}
+
+.cmp .hist-tabs button + button { border-left: 1px solid #b0b8cc; }
+
+.cmp .hist-tabs button.active {
+    background: var(--cmp-navy);
+    color: #fff;
+    font-weight: bold;
+}
+
+.hist-scroll { max-height: 460px; }
+
+.cmp .hist-scroll th, .cmp .hist-scroll td { text-align: left; }
+
+.cmp .hist-actions { text-align: right; }
+
+.cmp .hist-actions button {
+    font-size: 13px;
+    padding: 4px 10px;
+    margin-left: 6px;
+    border-radius: 6px;
+}
+
+.cmp .hist-actions button.sure {
+    background: var(--cmp-red);
+    border-color: var(--cmp-red);
+    color: #fff;
+}
+
+.hist-status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    background: #e9edf5;
+}
+
+.hist-status.completed { background: #dff3e6; color: #1e6b3d; }
+.hist-status.stopped { background: #fff1d6; color: #8a5a00; }
+.hist-status.error { background: #fdecee; color: var(--cmp-red); }
+.hist-status.on-screen { background: #e3ecff; color: #1f56c4; }
+
+.hist-empty {
+    margin: 6px 0;
+    color: var(--cmp-muted);
+    font-size: 14px;
+}
+
+.hist-facts, .hist-settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+
+.hist-facts b, .hist-settings b { margin-right: 4px; }
+.hist-facts b { color: var(--cmp-muted); font-weight: bold; }
+
+.hist-settings {
+    padding-top: 10px;
+    border-top: 1px solid var(--cmp-line);
+}
+
+.hist-path {
+    margin: 0;
+    font-size: 12px;
+    color: var(--cmp-muted);
+    word-break: break-all;
+}
+
+.cmp-saved-note {
+    font-size: 14px;
+    border-left: 4px solid var(--cmp-blue);
+}
+
+[data-theme="dark"] .cmp .hist-tabs,
+[data-theme="dark"] .cmp .hist-tabs button + button { border-color: #3a4458; }
+[data-theme="dark"] .cmp .hist-tabs button.active { background: #2e6be6; color: #fff; }
+[data-theme="dark"] .hist-status { background: #2a3245; color: #c9d1e0; }
+[data-theme="dark"] .hist-status.completed { background: #1d3a29; color: #8fdcab; }
+[data-theme="dark"] .hist-status.stopped { background: #3a3020; color: #f0c674; }
+[data-theme="dark"] .hist-status.error { background: #3a1d22; color: #ff9aa2; }
+[data-theme="dark"] .hist-status.on-screen { background: #1f2d4d; color: #9dbbff; }
+[data-theme="dark"] .cmp .hist-actions button.sure { background: #c62833; border-color: #c62833; color: #fff; }
