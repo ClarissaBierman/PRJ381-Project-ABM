@@ -227,6 +227,8 @@
         .parameter-control { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; font-size: 13px; }
         .parameter-control input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 2px 0; }
         .parameter-control output { color: var(--muted); font-variant-numeric: tabular-nums; }
+        .param-box { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); }
+        .param-box input { width: 72px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; text-align: right; background: var(--panel); color: inherit; font-variant-numeric: tabular-nums; }
         .run-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
         .run-options label { display: flex; flex-direction: column; gap: 4px; font-weight: bold; font-size: 12px; }
         .run-options input { width: 100%; padding: 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
@@ -812,7 +814,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
-    <script src="js/grid.js"></script>
+    <script src="js/grid.js?v=4"></script>
     <script src="js/compare.js?v=5"></script>
     <script src="js/history.js?v=3"></script>
 
@@ -958,9 +960,9 @@
             },
             WolfSheep: {
                 "Stable populations": {
-                    gridWidth: 50, gridHeight: 50, initialSheep: 100, initialWolves: 50,
-                    grassRegrowthProbability: 0.033, grassEnergyGain: 4, sheepEnergyGain: 20,
-                    sheepReproductionProbability: 0.04, wolfReproductionProbability: 0.05
+                    gridWidth: 50, gridHeight: 50, topology: "Toroidal", initialSheep: 150, initialWolves: 25,
+                    grassRegrowthProbability: 0.05, grassEnergyGain: 6, sheepEnergyGain: 8,
+                    sheepReproductionProbability: 0.04, wolfReproductionProbability: 0.02
                 },
                 "Few wolves": { initialWolves: 5 }
             }
@@ -1010,26 +1012,79 @@
                     tip.className = "info"; tip.tabIndex = 0; tip.textContent = "i"; tip.dataset.tip = parameterTips[key];
                     caption.append(tip);
                 }
-                const value = document.createElement("output"); value.id = `value-${key}`;
                 const input = document.createElement("input");
                 input.type = "range"; input.min = min; input.max = max; input.step = step;
                 input.value = activePending[configKey(key)]; input.setAttribute("aria-label", label);
-                const display = n => percent ? `${Math.round(Number(n) * 100)}%` : String(n);
-                value.textContent = display(input.value);
-                input.addEventListener("input", () => {
-                    const raw = Number(input.value);
+                // A number box next to each slider, so exact values can be typed.
+                // Percentages are typed as whole percent (5 means 5%).
+                const box = document.createElement("span"); box.className = "param-box";
+                const number = document.createElement("input");
+                number.type = "number"; number.id = `value-${key}`;
+                number.setAttribute("aria-label", `${label} value`);
+                const toBox = n => percent ? Math.round(Number(n) * 100) : Number(n);
+                const fromBox = n => percent ? Number(n) / 100 : Number(n);
+                number.min = toBox(min); number.max = toBox(max); number.step = percent ? 1 : step;
+                number.value = toBox(input.value);
+                box.append(number);
+                if (percent) box.append("%");
+                const setValue = raw => {
                     activePending[configKey(key)] = percent ? raw : (Number.isInteger(step) ? Math.round(raw) : raw);
-                    value.textContent = display(input.value);
                     markCustom();
+                };
+                input.addEventListener("input", () => {
+                    number.value = toBox(input.value);
+                    setValue(Number(input.value));
                 });
-                wrap.append(caption, value, input); parameterControls.append(wrap);
+                number.addEventListener("change", () => {
+                    if (number.value === "" || Number.isNaN(Number(number.value))) { number.value = toBox(input.value); return; }
+                    const top = Number(input.max), bottom = Number(input.min);
+                    const raw = Math.min(top, Math.max(bottom, fromBox(number.value)));
+                    input.value = raw;
+                    number.value = toBox(raw);
+                    setValue(raw);
+                    applyLimits();
+                });
+                wrap.dataset.key = key;
+                wrap.append(caption, box, input); parameterControls.append(wrap);
             });
             fillRunOptions();
+            applyLimits();
             fillPresets(model);
             validationErrors.textContent = "";
         }
 
         [gridWidthInput, gridHeightInput, schedulerInput, wrapEdgesInput].forEach(input => input.addEventListener("change", markCustom));
+
+        // Keeps the agent sliders inside what the grid can hold, so the whole
+        // slider range is usable. Infected agents can't be more than all agents.
+        function applyLimits() {
+            if (!activePending) return;
+            const width = Number(gridWidthInput.value) || activePending.gridWidth;
+            const height = Number(gridHeightInput.value) || activePending.gridHeight;
+            const cells = Math.max(1, width * height);
+            const limits = {
+                AgentCount: cells,
+                InitialSheep: cells,
+                InitialWolves: cells,
+                InitialInfected: Math.min(cells, activePending.agentCount ?? cells)
+            };
+            parameterControls.querySelectorAll(".parameter-control").forEach(wrap => {
+                const top = limits[wrap.dataset.key];
+                if (top === undefined) return;
+                const slider = wrap.querySelector('input[type="range"]');
+                const number = wrap.querySelector('input[type="number"]');
+                slider.max = top; number.max = top;
+                const value = activePending[configKey(wrap.dataset.key)];
+                if (value > top) {
+                    activePending[configKey(wrap.dataset.key)] = top;
+                    slider.value = top; number.value = top;
+                }
+            });
+        }
+        [gridWidthInput, gridHeightInput].forEach(input => input.addEventListener("input", applyLimits));
+        parameterControls.addEventListener("input", e => {
+            if (e.target.closest?.('[data-key="AgentCount"]')) applyLimits();
+        });
 
         // One shared tooltip, positioned on screen, so panels that scroll can't clip it.
         const tipBox = document.getElementById("tipBox");
@@ -1145,6 +1200,13 @@
                         display: false,
                         title: { display: true, text: "Fraction" },
                         grid: { drawOnChartArea: false }
+                    },
+                    y2: {
+                        position: "right",
+                        beginAtZero: true,
+                        display: false,
+                        title: { display: true, text: "Grass cells" },
+                        grid: { drawOnChartArea: false }
                     }
                 }
             }
@@ -1201,6 +1263,7 @@
             chartData.datasets.length = 0;
             pointsByKey = {};
             statsChart.options.scales.y1.display = false;
+            statsChart.options.scales.y2.display = false;
             statsChart.update("none");
         }
 
@@ -1213,6 +1276,10 @@
 
             const isFraction = key.includes("Fraction");
             if (isFraction) statsChart.options.scales.y1.display = true;
+            // Grass runs into the thousands, so it gets its own axis on the
+            // right and doesn't flatten the sheep and wolf lines.
+            const isGrass = key === "Grass";
+            if (isGrass) statsChart.options.scales.y2.display = true;
 
             const color = metricColor(key) || seriesColors[chartData.datasets.length % seriesColors.length];
             const points = [];
@@ -1224,7 +1291,7 @@
                 data: points,
                 tension: 0.2,
                 pointRadius: 0,
-                yAxisID: isFraction ? "y1" : "y"
+                yAxisID: isFraction ? "y1" : (isGrass ? "y2" : "y")
             });
             pointsByKey[key] = points;
             return points;
@@ -1300,7 +1367,30 @@
                 ensureSeries(key).push({ x: tick.tick, y: value });
             });
 
-            statsChart.update("none");
+            chartNeedsUpdate = true;
+            queueFrame();
+        }
+
+        // At fast speeds the server sends far more ticks than the screen can show.
+        // Ticks are still all added to the chart, but the chart and the grid are only
+        // redrawn once per screen frame, using the newest grid, so nothing piles up.
+        let chartNeedsUpdate = false;
+        let pendingGrid = null;
+        let frameQueued = false;
+
+        function queueFrame() {
+            if (frameQueued) return;
+            frameQueued = true;
+            requestAnimationFrame(() => {
+                frameQueued = false;
+                if (chartNeedsUpdate) {
+                    chartNeedsUpdate = false;
+                    statsChart.update("none");
+                }
+                const grid = pendingGrid;
+                pendingGrid = null;
+                if (grid && currentRun && grid.runId === currentRun.runId) drawGrid(grid);
+            });
         }
 
         // Many ticks at once (a continued run being shown again), with one chart redraw at the end.
@@ -1730,7 +1820,8 @@
 
         connection.on("ReceiveGrid", grid => {
             if (!currentRun || grid.runId !== currentRun.runId) return;
-            drawGrid(grid);
+            pendingGrid = grid;
+            queueFrame();
         });
 
         setupButton.addEventListener("click", () => {

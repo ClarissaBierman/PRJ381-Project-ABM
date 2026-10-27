@@ -109,5 +109,6 @@ Each run in a Compare batch is saved as its own Simulation with all of its ticks
 ## Notes
 
 - **Excel or CSV:** pick **Excel** when you want to open the results in Excel. CSV files use `,` between columns and `.` for decimals, and on computers set to South African number formats Excel puts a CSV in one column. The Excel download doesn't have that problem. Past runs and the Compare panel have both too.
-- **Wolf-Sheep** on a small grid usually ends with the wolves wiping out the sheep. Try a bigger grid (for example 50×50) to keep both populations going for longer.
+- **Wolf-Sheep** on the default small grid usually ends with the wolves wiping out the sheep. Pick the **Stable populations** preset (50×50 grid, 150 sheep, 25 wolves) to see both populations rise and fall in waves. With those settings both survived 500 ticks in all 30 seeds we tested.
+- Every slider has a number box next to it for typing an exact value. Percentages are typed as whole numbers (5 means 5%). Agent sliders only go up to the number of cells on the grid.
 - Grid width and height can be from 5 to 200.

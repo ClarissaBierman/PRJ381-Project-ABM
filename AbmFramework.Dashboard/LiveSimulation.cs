@@ -33,6 +33,11 @@ public class LiveSimulationService
     private ActiveRun? _activeRun;
     private GridData? _lastGrid;
 
+    // At fast speeds a big grid can't be sent and drawn 100 times a second, so the
+    // grid is sent at most about 25 times a second. Every tick's numbers are still sent.
+    private const int MinGridIntervalMs = 40;
+    private long _lastGridSentMs;
+
     public const int MinTickDelayMs = 10;
     public const int MaxTickDelayMs = 1000;
 
@@ -173,6 +178,7 @@ public class LiveSimulationService
                 if (!cts.IsCancellationRequested && ReferenceEquals(engine, _engine))
                 {
                     recorder?.Finish("Completed", engine.GetSnapshot());
+                    if (_lastGrid is { } finalGrid) _ = BroadcastGridAsync(finalGrid, cts.Token);
                     _ = SetStatusAsync("Completed");
                 }
             };
@@ -199,6 +205,7 @@ public class LiveSimulationService
 
         _engine.Pause();
         _activeRun?.Recorder?.Flush();
+        if (_lastGrid is { } grid) await BroadcastGridAsync(grid, CancellationToken.None);
         await SetStatusAsync("Paused");
     }
 
@@ -350,7 +357,11 @@ public class LiveSimulationService
         var grid = BuildGridData(snapshot, runId);
         _lastGrid = grid;
 
-        _ = BroadcastAsync(tick, grid, token);
+        var now = Environment.TickCount64;
+        var sendGrid = engine.IsPaused || now - _lastGridSentMs >= MinGridIntervalMs;
+        if (sendGrid) _lastGridSentMs = now;
+
+        _ = BroadcastAsync(tick, sendGrid ? grid : null, token);
     }
 
     // Sends the replayed ticks to the page in one go, then the grid, then pauses.
@@ -472,12 +483,15 @@ public class LiveSimulationService
         }
     }
 
-    private async Task BroadcastAsync(TickData tick, GridData grid, CancellationToken token)
+    private async Task BroadcastAsync(TickData tick, GridData? grid, CancellationToken token)
     {
         try
         {
             await _hubContext.Clients.All.SendAsync("ReceiveTick", tick, token);
-            await _hubContext.Clients.All.SendAsync("ReceiveGrid", grid, token);
+            if (grid is not null)
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveGrid", grid, token);
+            }
         }
         catch (OperationCanceledException)
         {
