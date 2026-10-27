@@ -7,6 +7,19 @@ let gridWidth = 20;
 let gridHeight = 20;
 let cellSize = targetSize / 20;
 
+// The canvas is drawn at the screen's real pixel density (devicePixelRatio), so the
+// grid and icons stay sharp on high-DPI and scaled Windows displays.
+function sizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = gridWidth * cellSize, h = gridHeight * cellSize;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingQuality = "high";
+}
+
 const stateStyles = {
     "Susceptible": { color: "#3366cc", label: "Susceptible", icon: "person" },
     "Infected": { color: "#dc3545", label: "Infected", icon: "person" },
@@ -18,8 +31,8 @@ const stateStyles = {
     "BoidAgent": { color: "#3366cc", label: "Boid", icon: "boid" },
     "Searching": { color: "#5d4037", label: "Searching for food", icon: "ant" },
     "ReturningWithFood": { color: "#5d4037", label: "Carrying food home", icon: "antWithFood" },
-    "Sheep": { color: "#f1c40f", label: "Sheep", icon: "sheep" },
-    "Wolf": { color: "#34495e", label: "Wolves", icon: "wolf" }
+    "Sheep": { color: "#ffffff", label: "Sheep", icon: "sheep", scale: 1.5 },
+    "Wolf": { color: "#1b1b1b", label: "Wolves", icon: "wolf", scale: 2 }
 };
 
 // Patch (grid cell) colours, like NetLogo's patches. Shown as square swatches in the legend.
@@ -71,19 +84,32 @@ const iconShapes = {
         <path d="M31 16 L4 29 L10 16 L4 3 Z" fill="${c}" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>`,
     ant: c => ant(c, ""),
     antWithFood: c => ant(c, `<circle cx="27" cy="16" r="5" fill="#ff9800" stroke="#5d4037" stroke-width="1.5"/>`),
+    // Sheep and wolf are drawn like NetLogo's Wolf Sheep model: flat side-on shapes,
+    // white sheep and black wolves, a bit bigger than a cell (see "scale" above).
     sheep: () => `
-        <path d="M9 23 V29 M14 23 V29 M19 23 V29 M23 23 V29" stroke="#333" stroke-width="2.2" stroke-linecap="round"/>
-        <g fill="#fafafa" stroke="#888" stroke-width="1">
-            <circle cx="8" cy="15" r="5"/><circle cx="13" cy="11" r="5.5"/><circle cx="19" cy="11.5" r="5"/>
-            <circle cx="10" cy="20" r="5"/><circle cx="17" cy="20" r="5.5"/><circle cx="21" cy="16" r="5"/>
+        <path d="M10 21 V29 M14 21 V29 M19 21 V29 M23 21 V29" stroke="#6b6b6b" stroke-width="2.6" stroke-linecap="round"/>
+        <g fill="#b5b5b5">
+            <circle cx="9" cy="15" r="6.8"/><circle cx="15" cy="11.5" r="6.8"/><circle cx="21" cy="12.5" r="6.3"/>
+            <circle cx="11" cy="19.5" r="5.8"/><circle cx="18" cy="19.5" r="5.8"/>
         </g>
-        <ellipse cx="26.5" cy="13.5" rx="4" ry="3.5" fill="#333"/>`,
+        <g fill="#ffffff">
+            <circle cx="9" cy="15" r="6"/><circle cx="15" cy="11.5" r="6"/><circle cx="21" cy="12.5" r="5.5"/>
+            <circle cx="11" cy="19.5" r="5"/><circle cx="18" cy="19.5" r="5"/>
+        </g>
+        <path d="M24 10.5 C27 9 30.5 11 30.5 14.5 C30.5 17 28.5 18 26.5 17.5 C25 17 24 15 24 13 Z" fill="#6b6b6b"/>
+        <ellipse cx="24.5" cy="10.5" rx="2.6" ry="1.4" fill="#6b6b6b"/>`,
     wolf: c => `
-        <path d="M3 13 Q5 18 9 16" stroke="${c}" stroke-width="3" fill="none" stroke-linecap="round"/>
-        <path d="M10 22 V29 M14 22 V29 M19 22 V29 M23 22 V29" stroke="${c}" stroke-width="2.4" stroke-linecap="round"/>
-        <ellipse cx="16" cy="18" rx="9" ry="5.5" fill="${c}"/>
-        <path d="M22 16 L23 6 L26 11 L28 6 L29 12 L31 15 L29.5 18 L24 19 Z" fill="${c}"/>
-        <circle cx="27" cy="13" r="1" fill="#f1c40f"/>`
+        <g>
+            <path d="M5 14 C2.5 16 2 20 3 23 C5 20.5 7 18.5 9 17.5 Z" fill="#8c8c8c" stroke="#8c8c8c" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M9 22 V29.5 M13 22 V29.5 M19.5 22 V29.5 M23.5 22 V29.5" stroke="#8c8c8c" stroke-width="4.4" stroke-linecap="round"/>
+            <path d="M7 16 C8 12.5 12 11.5 16 12 C19 12.3 21 12 22.5 11 L25 13 C25.5 17 24.5 21 22 22.5 C17 24 11 24 8.5 22.5 C6.8 21 6.5 18 7 16 Z" fill="#8c8c8c" stroke="#8c8c8c" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M21.5 11.5 L22.5 4.5 L25 8.5 L27 4.5 L28 9.5 C29.5 10.5 31 12 31.5 13.5 L28.5 15 C27 15.8 25 15.8 23.5 15 Z" fill="#8c8c8c" stroke="#8c8c8c" stroke-width="1.6" stroke-linejoin="round"/>
+        </g>
+        <path d="M5 14 C2.5 16 2 20 3 23 C5 20.5 7 18.5 9 17.5 Z" fill="${c}"/>
+        <path d="M9 22 V29.5 M13 22 V29.5 M19.5 22 V29.5 M23.5 22 V29.5" stroke="${c}" stroke-width="2.8" stroke-linecap="round"/>
+        <path d="M7 16 C8 12.5 12 11.5 16 12 C19 12.3 21 12 22.5 11 L25 13 C25.5 17 24.5 21 22 22.5 C17 24 11 24 8.5 22.5 C6.8 21 6.5 18 7 16 Z" fill="${c}"/>
+        <path d="M21.5 11.5 L22.5 4.5 L25 8.5 L27 4.5 L28 9.5 C29.5 10.5 31 12 31.5 13.5 L28.5 15 C27 15.8 25 15.8 23.5 15 Z" fill="${c}"/>
+        <circle cx="27" cy="11" r="0.9" fill="#f1c40f"/>`
 };
 
 function face(c, mouth) {
@@ -110,7 +136,7 @@ function iconFor(style) {
 
     const key = style.icon + "|" + style.color;
     if (!(key in iconCache)) {
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">${iconShapes[style.icon](style.color)}</svg>`;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 32 32">${iconShapes[style.icon](style.color)}</svg>`;
         const img = new Image();
         img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
         iconCache[key] = img;
@@ -137,8 +163,7 @@ function setGridSize(width, height) {
     gridWidth = width;
     gridHeight = height;
     cellSize = Math.floor(targetSize / Math.max(width, height));
-    canvas.width = gridWidth * cellSize;
-    canvas.height = gridHeight * cellSize;
+    sizeCanvas();
     clearGrid();
 }
 
@@ -165,8 +190,7 @@ function fitGridTo(size) {
     if (next === targetSize) return;
     targetSize = next;
     cellSize = Math.max(2, Math.floor(targetSize / Math.max(gridWidth, gridHeight)));
-    canvas.width = gridWidth * cellSize;
-    canvas.height = gridHeight * cellSize;
+    sizeCanvas();
     if (lastGrid) {
         redrawGrid();
     } else {
@@ -188,14 +212,21 @@ function clearGrid() {
     drawGridLines();
 }
 
+// One path for all the lines is much faster than a rectangle per cell on big grids.
 function drawGridLines() {
+    const w = gridWidth * cellSize, h = gridHeight * cellSize;
     ctx.strokeStyle = "#d0d0d0";
-
-    for (let y = 0; y < gridHeight; y++) {
-        for (let x = 0; x < gridWidth; x++) {
-            ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
-        }
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x <= gridWidth; x++) {
+        ctx.moveTo(x * cellSize, 0);
+        ctx.lineTo(x * cellSize, h);
     }
+    for (let y = 0; y <= gridHeight; y++) {
+        ctx.moveTo(0, y * cellSize);
+        ctx.lineTo(w, y * cellSize);
+    }
+    ctx.stroke();
 }
 
 function fillCell(x, y, color, alpha = 1) {
@@ -230,12 +261,21 @@ function drawPatches(grid) {
         }
     });
 
+    // All the eaten-grass cells share one colour, so they are filled in one go.
+    if (grid.hasGrass && displayOptions.showGrass) {
+        ctx.fillStyle = patchStyles.BareGround.color;
+        ctx.beginPath();
+        patches.forEach(p => {
+            if (p.grass === false) {
+                ctx.rect(p.x * cellSize, p.y * cellSize, cellSize, cellSize);
+                drawn.add("BareGround");
+            }
+        });
+        ctx.fill();
+    }
+
     const nests = [];
     patches.forEach(p => {
-        if (p.grass === false && grid.hasGrass && displayOptions.showGrass) {
-            fillCell(p.x, p.y, patchStyles.BareGround.color);
-            drawn.add("BareGround");
-        }
         if (p.food > 0 && displayOptions.showFood) {
             // Piles fade as the ants carry the food away.
             fillCell(p.x, p.y, patchStyles.Food.color, 0.3 + 0.7 * (p.food / foodReference));
@@ -276,13 +316,43 @@ function drawAgent(a, style) {
         return;
     }
 
-    const size = Math.max(6, cellSize * 0.95);
-    ctx.save();
-    ctx.translate(cx, cy);
+    // Icons fill their own cell. Only when cells get very small are sheep and wolves
+    // drawn a little bigger (like NetLogo's turtle "size") so they stay visible.
+    const size = style.scale
+        ? Math.max(cellSize * 0.95, Math.min(cellSize * style.scale, 14))
+        : Math.max(6, cellSize * 0.95);
+    const sprite = spriteFor(img, size);
     const angle = typeof a.heading === "number" ? a.heading : a.facing;
-    if (typeof angle === "number") ctx.rotate(angle);
-    ctx.drawImage(img, -size / 2, -size / 2, size, size);
-    ctx.restore();
+    if (typeof angle === "number") {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+        ctx.restore();
+    } else {
+        ctx.drawImage(sprite, cx - size / 2, cy - size / 2, size, size);
+    }
+}
+
+// Drawing an SVG image is slow when it happens thousands of times a frame, so each
+// icon is turned into a small bitmap once per size and that bitmap is reused.
+const spriteCache = new WeakMap();
+function spriteFor(img, size) {
+    const px = Math.max(1, Math.ceil(size * (window.devicePixelRatio || 1)));
+    let sizes = spriteCache.get(img);
+    if (!sizes) {
+        sizes = new Map();
+        spriteCache.set(img, sizes);
+    }
+    let sprite = sizes.get(px);
+    if (!sprite) {
+        sprite = document.createElement("canvas");
+        sprite.width = px;
+        sprite.height = px;
+        sprite.getContext("2d").drawImage(img, 0, 0, px, px);
+        sizes.set(px, sprite);
+    }
+    return sprite;
 }
 
 function drawSelection() {
@@ -420,8 +490,8 @@ function renderLegend() {
 // Converts a mouse event on the canvas into a grid cell, allowing for the canvas being scaled by CSS.
 function cellFromEvent(event) {
     const rect = canvas.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+    const x = (event.clientX - rect.left) * (gridWidth * cellSize / rect.width);
+    const y = (event.clientY - rect.top) * (gridHeight * cellSize / rect.height);
     return { x: Math.floor(x / cellSize), y: Math.floor(y / cellSize) };
 }
 
