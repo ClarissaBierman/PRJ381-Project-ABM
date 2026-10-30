@@ -1,0 +1,21 @@
+{
+  "ScenarioName": "Wolf-Sheep Stable populations",
+  "Model": "WolfSheep",
+  "GridWidth": 50,
+  "GridHeight": 50,
+  "Topology": "Toroidal",
+  "AgentCount": 175,
+  "InitialSheep": 150,
+  "InitialWolves": 25,
+  "InitialSheepEnergy": 4.0,
+  "InitialWolfEnergy": 8.0,
+  "EnergyLossPerTick": 1.0,
+  "GrassRegrowthProbability": 0.05,
+  "GrassEnergyGain": 6.0,
+  "SheepEnergyGain": 8.0,
+  "SheepReproductionProbability": 0.04,
+  "WolfReproductionProbability": 0.02,
+  "TickLimit": 500,
+  "RandomSeed": 7,
+  "Scheduler": "Random"
+}

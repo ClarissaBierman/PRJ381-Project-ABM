@@ -1,9 +1,23 @@
+// =============================================================================
+// MonteCarloTests.cs  (AbmFramework.Engine.Tests)
+//
+// Tests for MonteCarloRunner and MonteCarloCsvExporter: seeds come from the
+// base seed, batches repeat exactly, progress is reported, and the CSV is right.
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using System.Globalization;
 using AbmFramework.Config;
 using Xunit;
 
 namespace AbmFramework.Engine.Tests;
 
+/// <summary>Tests for Monte Carlo batches.</summary>
 public class MonteCarloRunnerTests
 {
     [Theory]

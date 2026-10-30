@@ -1,3 +1,9 @@
+// =============================================================================
+// FixedRandom.cs  (ABM.Core.Tests)
+//
+// Test helper: a fake random generator. See the comment on the class.
+// =============================================================================
+
 namespace ABM.Core.Tests;
 
 // A Random whose every roll returns the same value, so a test can force a

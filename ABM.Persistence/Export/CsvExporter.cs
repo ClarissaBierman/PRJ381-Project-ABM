@@ -1,15 +1,21 @@
-﻿using System;
-using System.Collections.Generic;
+﻿// =============================================================================
+// CsvExporter.cs  (ABM.Persistence.Export)
+//
+// Writes a run's tick history as CSV (comma-separated values), which opens in
+// Excel, Google Sheets, Python (pandas) or R. One row per tick.
+// Used by the dashboard's Download > CSV button and by the console app.
+// =============================================================================
+
 using System.Globalization;
-using System.Linq;
 using System.Text;
 using ABM.Persistence.Models;
-using System.Threading.Tasks;
 
 namespace ABM.Persistence.Export
 {
+    /// <summary>Writes tick statistics as CSV.</summary>
     public static class CsvExporter
     {
+        /// <summary>Writes the ticks to a file, replacing it if it exists.</summary>
         public static async Task ExportTicksAsync(
             IEnumerable<TickRecord> ticks,
             string filePath)
@@ -18,15 +24,19 @@ namespace ABM.Persistence.Export
             await WriteTicksAsync(ticks, writer);
         }
 
-        // SIR runs get Tick,Susceptible,Infected,Recovered. Runs whose ticks
-        // carry metrics (every other model) get Tick plus one column per
-        // metric key instead, since their S/I/R counts are always 0.
+        /// <summary>
+        /// Writes the ticks to any TextWriter (a file, or the web response for a download).
+        /// SIR runs get Tick,Susceptible,Infected,Recovered. Runs whose ticks
+        /// carry metrics (every other model) get Tick plus one column per
+        /// metric key instead, since their S/I/R counts are always 0.
+        /// </summary>
         public static async Task WriteTicksAsync(
             IEnumerable<TickRecord> ticks,
             TextWriter writer)
         {
             var records = ticks.ToList();
 
+            // Every metric name used in the run, in a fixed (alphabetical) order.
             var metricKeys = records
                 .SelectMany(r => r.Metrics.Keys)
                 .Distinct()

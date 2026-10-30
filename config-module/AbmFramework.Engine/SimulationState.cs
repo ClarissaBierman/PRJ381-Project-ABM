@@ -1,16 +1,24 @@
+// =============================================================================
+// SimulationState.cs  (AbmFramework.Engine)
+//
+// The four states an engine can be in. Typical flow:
+//   Stopped -> Running <-> Paused -> Completed
+// =============================================================================
+
 namespace AbmFramework.Engine;
 
+/// <summary>Where a simulation is in its life.</summary>
 public enum SimulationState
 {
-    //The engine has not started or has been reset.
+    /// <summary>The engine has not started or has been reset.</summary>
     Stopped,
 
-    //The simulation is currently executing ticks.
+    /// <summary>The simulation is currently executing ticks.</summary>
     Running,
 
-    //Execution is temporarily suspended.
+    /// <summary>Execution is temporarily suspended between ticks.</summary>
     Paused,
 
-    //The simulation reached its natural end
+    /// <summary>The run reached its tick limit or was cancelled.</summary>
     Completed
 }

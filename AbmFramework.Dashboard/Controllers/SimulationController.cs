@@ -1,3 +1,15 @@
+// =============================================================================
+// SimulationController.cs  (AbmFramework.Dashboard.Controllers)
+//
+// Downloads for the run that is on screen right now (the Download button):
+//   GET /api/simulation/ticks.xlsx?runId=3   every tick so far, as Excel
+//   GET /api/simulation/ticks.csv?runId=3    the same, as CSV
+//
+// These are plain HTTP (REST) endpoints rather than SignalR messages because
+// the browser can download a file straight from a URL.
+// Saved runs are downloaded through HistoryController instead.
+// =============================================================================
+
 using System.Text;
 using ABM.Persistence.Export;
 using ABM.Persistence.Models;
@@ -5,18 +17,20 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace AbmFramework.Dashboard.Controllers;
 
+/// <summary>Downloads of the live run's tick statistics.</summary>
 [ApiController]
 [Route("api/simulation")]
 public class SimulationController : ControllerBase
 {
     private readonly LiveSimulationService _simulation;
 
+    /// <summary>ASP.NET Core passes in the live simulation service.</summary>
     public SimulationController(LiveSimulationService simulation)
     {
         _simulation = simulation;
     }
 
-    // The same as ticks.csv, as an Excel file that opens straight into columns.
+    /// <summary>The same as ticks.csv, as an Excel file that opens straight into columns.</summary>
     [HttpGet("ticks.xlsx")]
     public IActionResult DownloadTicksExcel([FromQuery] int runId)
     {
@@ -38,9 +52,11 @@ public class SimulationController : ControllerBase
         return File(ExcelExporter.WriteTicks(records), ExcelExporter.ContentType, fileName);
     }
 
-    // Downloads the tick-by-tick statistics of the given run so far. runId
-    // guards against downloading a different run than the one on screen if
-    // the simulation was restarted or reset in the meantime.
+    /// <summary>
+    /// Downloads the tick-by-tick statistics of the given run so far. runId
+    /// guards against downloading a different run than the one on screen if
+    /// the simulation was restarted or reset in the meantime.
+    /// </summary>
     [HttpGet("ticks.csv")]
     public async Task<IActionResult> DownloadTicksCsv([FromQuery] int runId)
     {

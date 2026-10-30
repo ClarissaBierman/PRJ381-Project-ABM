@@ -1,3 +1,6 @@
+// =============================================================================
+// compare.js  (dashboard page)
+//
 // Compare runs: the dashboard's version of NetLogo's BehaviorSpace.
 //
 // The user picks a model, sets the sliders and grid size, and chooses how many
@@ -12,10 +15,27 @@
 // controls and talks to its own hub (/comparisonHub), so it does not depend on
 // the live-run code in index.html. It needs Chart.js and signalR, which
 // index.html already loads.
+//
+// Flow: openPanel -> loadModel (server defaults) -> buildSet (slider cards)
+// -> runComparison: validateInputs, then for setting A (and B) call the hub's
+// "RunComparison", showing "ComparisonProgress" messages on the bar
+// -> renderResults (tables + chart) -> Download Excel / CSV.
+// Server side: Hubs/ComparisonHub.cs and Comparison/ComparisonService.cs.
+//
+// The only thing it shares with other files: window.abmCompare.showSaved,
+// used by history.js to reopen a saved comparison.
+//
+// ADD A MODEL: add its sliders to PARAMS below. A slider's key must be the
+// camelCase name of a SimulationConfig property, and then the server needs
+// no change at all.
+// =============================================================================
+
 (function () {
     "use strict";
 
+    // Setting A is blue, setting B is orange, everywhere (tables, chart, cards).
     const COLOURS = { A: "#2e6be6", B: "#e8590c" };
+    // Same limits as ComparisonService.cs, checked here first for quick feedback.
     const MIN_RUNS = 2, MAX_RUNS = 100, MIN_GRID = 10, MAX_GRID = 100;
 
     // Sliders per model. `key` is the SimulationConfig property name (camelCase)
@@ -61,6 +81,7 @@
         ]
     };
 
+    // Everything the panel remembers.
     const state = {
         connection: null,
         models: [],
@@ -82,12 +103,14 @@
 
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+    // A number for display: "-" if missing, whole numbers as-is, else 2 decimals.
     function fmt(v, digits) {
         if (!Number.isFinite(v)) return "-";
         if (digits !== undefined) return v.toFixed(digits);
         return Number.isInteger(v) ? String(v) : v.toFixed(2);
     }
 
+    // A number plus its column's unit, e.g. "45.20 %".
     function fmtCol(col, v) {
         return fmt(v) + (col.unit ? " " + col.unit : "");
     }
@@ -101,6 +124,7 @@
 
     // ------------------------------------------------------------------ build
 
+    // Creates the panel's HTML (hidden until opened) and its event handlers.
     function build() {
         const overlay = document.createElement("div");
         overlay.className = "cmp cmp-overlay";
@@ -181,6 +205,7 @@
         el.xlsx.addEventListener("click", downloadExcel);
     }
 
+    // Adds the Compare button next to the dashboard's Download button.
     function addButton() {
         const button = document.createElement("button");
         button.type = "button";
@@ -198,6 +223,9 @@
 
     // ------------------------------------------------------------ connection
 
+    // Connects to /comparisonHub the first time it is needed and reuses the
+    // connection after that. Returns a promise of the connected connection.
+    // The long server timeout allows for a slow batch.
     function connection() {
         if (!state.connection) {
             const c = new signalR.HubConnectionBuilder()
@@ -214,6 +242,7 @@
 
     // ------------------------------------------------------------- open/close
 
+    // Shows the panel. The first time, fetches the model list and the defaults.
     async function openPanel() {
         el.overlay.classList.add("open");
         document.body.style.overflow = "hidden";
@@ -230,6 +259,7 @@
         }
     }
 
+    // Hides the panel (a running comparison keeps going).
     function closePanel() {
         el.overlay.classList.remove("open");
         document.body.style.overflow = "";
@@ -237,6 +267,7 @@
 
     // ---------------------------------------------------------------- settings
 
+    // A model was picked: get its default settings from the server and rebuild the cards.
     async function loadModel(model) {
         hideError();
         state.model = model;
@@ -252,6 +283,7 @@
         renderSets();
     }
 
+    // Draws the settings card(s): A only, or A and B side by side.
     function renderSets() {
         const labels = state.twoSettings ? ["A", "B"] : ["A"];
 
@@ -267,6 +299,9 @@
         updateDifferences();
     }
 
+    // Builds one settings card (grid size, run length, scheduling, edges and
+    // the model's sliders from PARAMS). "start" holds values to fill in
+    // (from the other card or a saved comparison), otherwise the defaults are used.
     function buildSet(label, start) {
         const d = state.defaults;
         const lower = label.toLowerCase();
@@ -384,6 +419,8 @@
 
     // -------------------------------------------------------------------- run
 
+    // Checks the inputs before anything is sent. Returns a message for the
+    // user, or null if everything is fine. The server checks again anyway.
     function validateInputs() {
         const runs = parseInt(el.runs.value, 10);
         if (!Number.isInteger(runs) || runs < MIN_RUNS || runs > MAX_RUNS) {
@@ -413,6 +450,8 @@
         return null;
     }
 
+    // The "Run comparison" button: runs setting A, then B, one batch after
+    // the other, then shows the results. Both share one base seed and group id.
     async function runComparison() {
         if (state.running) return;
         hideError();
@@ -481,6 +520,7 @@
         }
     }
 
+    // A "ComparisonProgress" message arrived from the server.
     function onProgress(p) {
         if (!state.running) return;
         // Updates can arrive out of order; the bar only moves forward.
@@ -490,6 +530,7 @@
         setProgress(p.completed, p.label, state.currentIndex || 0);
     }
 
+    // Moves the progress bar. With two settings, A is the first half and B the second.
     function setProgress(completed, label, setIndex) {
         const runs = state.runs || 1;
         const overall = ((setIndex * runs) + completed) / (runs * (state.sets || 1));
@@ -504,6 +545,8 @@
 
     // ---------------------------------------------------------------- results
 
+    // Shows everything: averages with spread (±), the chart with a value
+    // picker, the B-minus-A difference table and every run's own row.
     function renderResults() {
         const two = state.results.length > 1;
         const first = state.results[0].summary;
@@ -564,6 +607,7 @@
         keySelect.value = state.chartKey;
     }
 
+    // The table of every run in one batch (run number, seed, values) plus its summary rows.
     function runTableHtml(result, two) {
         const { summary, label } = result;
         const cols = summary.columns;
@@ -595,6 +639,7 @@
             </div>`;
     }
 
+    // "Setting B compared with setting A": both averages and the change, per value.
     function differenceHtml() {
         const [a, b] = state.results.map((r) => r.summary);
         const rows = a.columns.map((col, i) => {
@@ -621,10 +666,13 @@
 
     // ------------------------------------------------------------------ chart
 
+    // Chart.js charts must be destroyed before their canvas is reused.
     function destroyChart() {
         if (state.chart) { state.chart.destroy(); state.chart = null; }
     }
 
+    // Draws the average line over time for the chosen value, with the
+    // lowest-to-highest range as a shaded band, for A (and B).
     function drawChart(key) {
         state.chartKey = key;
         destroyChart();
@@ -677,6 +725,7 @@
 
     // -------------------------------------------------------------------- csv
 
+    // One CSV cell: quoted if it contains a comma, quote or line break.
     function csvCell(v) {
         const s = String(v);
         return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -688,6 +737,7 @@
     const csvLine = (cells) => cells.map((c) => csvCell(csvNum(c))).join(",");
 
     // The summary as rows of cells, used for both the CSV and the Excel file.
+    // Everything shown on screen as rows of cells, shared by the Excel and CSV downloads.
     function buildRows() {
         const lines = [];
         const two = state.results.length > 1;
@@ -746,10 +796,12 @@
         return lines;
     }
 
+    // The rows as CSV text.
     function buildCsv() {
         return buildRows().map((row) => row.length ? csvLine(row) : "").join("\r\n") + "\r\n";
     }
 
+    // Posts the rows to /api/export/xlsx and downloads the Excel file it returns.
     async function downloadExcel() {
         if (state.results.length === 0) return;
         hideError();
@@ -775,6 +827,7 @@
         }
     }
 
+    // Downloads the rows as a CSV file, built entirely in the browser.
     function downloadCsv() {
         if (state.results.length === 0) return;
         // The BOM makes Excel read the file as UTF-8.
@@ -792,6 +845,7 @@
 
     // ------------------------------------------------------- saved results
 
+    // A random GUID for the group id (with a fallback for old browsers).
     function newId() {
         if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
         return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
@@ -833,15 +887,18 @@
             `<div class="cmp-card cmp-saved-note">Saved comparison from ${esc(when)}. Press <strong>Run comparison</strong> to run it again.</div>`);
     }
 
+    // The one thing other files may call (history.js reopens saved comparisons).
     window.abmCompare = { showSaved };
 
     // ------------------------------------------------------------------ errors
 
+    // Shows a message in the red error box.
     function showError(message) {
         el.error.textContent = message;
         el.error.hidden = false;
     }
 
+    // Hides the error box.
     function hideError() {
         el.error.hidden = true;
         el.error.textContent = "";
@@ -849,6 +906,7 @@
 
     // ------------------------------------------------------------------- start
 
+    // Runs once the page's HTML is ready.
     function init() {
         build();
         addButton();

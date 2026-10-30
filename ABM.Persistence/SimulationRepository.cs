@@ -1,16 +1,39 @@
-﻿using System.Globalization;
+﻿// =============================================================================
+// SimulationRepository.cs  (ABM.Persistence)
+//
+// The SQLite implementation of IRepository: all the SQL in the project lives
+// here. See DatabaseInitializer.cs for the tables and docs/DATABASE.md for a
+// diagram.
+//
+// How it works:
+//   - Every method opens its own short-lived connection and closes it again.
+//     SQLite connections are cheap, and this avoids sharing one connection
+//     between threads.
+//   - Values are always passed as $parameters, never pasted into the SQL
+//     text, which keeps the SQL safe from injection and handles quotes.
+//   - Saving many rows happens inside one transaction, which is many times
+//     faster than letting SQLite commit after every row.
+//   - Guids and dates are stored as text. Dates are always UTC in ISO 8601
+//     ("O" format) so they sort correctly as text.
+// =============================================================================
+
+using System.Globalization;
 using System.Text.Json;
 using ABM.Persistence.Models;
 using Microsoft.Data.Sqlite;
 
 namespace ABM.Persistence
 {
+    /// <summary>Saves and loads everything in one SQLite database file.</summary>
     public class SimulationRepository : IRepository
     {
         private readonly string _connectionString;
 
+        /// <summary>The full path of the .db file.</summary>
         public string DatabasePath { get; }
 
+        /// <summary>Opens (and if needed creates) the database at the given path.</summary>
+        /// <param name="databasePath">Path to the .db file. Relative paths are made absolute.</param>
         public SimulationRepository(string databasePath)
         {
             DatabasePath = Path.GetFullPath(databasePath);
@@ -19,6 +42,8 @@ namespace ABM.Persistence
             Database.DatabaseInitializer.Initialize(DatabasePath);
         }
 
+        // Opens a new connection. Foreign keys must be switched on for every
+        // connection in SQLite, otherwise ON DELETE CASCADE does nothing.
         private async Task<SqliteConnection> OpenAsync()
         {
             var connection = new SqliteConnection(_connectionString);
@@ -33,6 +58,7 @@ namespace ABM.Persistence
 
         // ------------------------------------------------------------ saving
 
+        /// <inheritdoc />
         public async Task SaveSimulationAsync(Simulation simulation)
         {
             using var connection = await OpenAsync();
@@ -41,6 +67,7 @@ namespace ABM.Persistence
             await command.ExecuteNonQueryAsync();
         }
 
+        /// <inheritdoc />
         public async Task UpdateSimulationAsync(Guid simulationId, string status, DateTime? endedAt, int tickCount)
         {
             using var connection = await OpenAsync();
@@ -56,6 +83,7 @@ namespace ABM.Persistence
             await command.ExecuteNonQueryAsync();
         }
 
+        /// <inheritdoc />
         public async Task<int> CloseUnfinishedRunsAsync(string status)
         {
             using var connection = await OpenAsync();
@@ -69,6 +97,7 @@ namespace ABM.Persistence
             return await command.ExecuteNonQueryAsync();
         }
 
+        /// <inheritdoc />
         public async Task SaveEnvironmentAsync(EnvironmentRecord environment)
         {
             using var connection = await OpenAsync();
@@ -77,8 +106,10 @@ namespace ABM.Persistence
             await command.ExecuteNonQueryAsync();
         }
 
+        /// <inheritdoc />
         public Task SaveTickRecordAsync(TickRecord record) => SaveTickRecordsAsync(new[] { record });
 
+        /// <inheritdoc />
         public async Task SaveTickRecordsAsync(IReadOnlyList<TickRecord> records)
         {
             if (records.Count == 0) return;
@@ -97,6 +128,7 @@ namespace ABM.Persistence
             transaction.Commit();
         }
 
+        /// <inheritdoc />
         public async Task SaveAgentsAsync(IReadOnlyList<AgentRecord> agents)
         {
             if (agents.Count == 0) return;
@@ -109,6 +141,9 @@ namespace ABM.Persistence
                 @"INSERT INTO Agents (SimulationId, AgentId, Breed, FirstTick, LastTick)
                   VALUES ($simulationId, $agentId, $breed, $first, $last)
                   ON CONFLICT (SimulationId, AgentId) DO UPDATE SET LastTick = excluded.LastTick;";
+
+            // "ON CONFLICT ... DO UPDATE" is an "upsert": insert the agent, or if
+            // it is already saved, just move its LastTick forward.
 
             foreach (var agent in agents)
             {
@@ -124,6 +159,7 @@ namespace ABM.Persistence
             transaction.Commit();
         }
 
+        /// <inheritdoc />
         public async Task SaveAgentStatesAsync(IReadOnlyList<AgentState> states)
         {
             if (states.Count == 0) return;
@@ -152,6 +188,7 @@ namespace ABM.Persistence
             transaction.Commit();
         }
 
+        /// <inheritdoc />
         public async Task SavePatchesAsync(IReadOnlyList<PatchRecord> patches)
         {
             if (patches.Count == 0) return;
@@ -178,6 +215,7 @@ namespace ABM.Persistence
             transaction.Commit();
         }
 
+        /// <inheritdoc />
         public async Task SaveBatchAsync(Batch batch, IReadOnlyList<BatchRun> runs)
         {
             using var connection = await OpenAsync();
@@ -204,6 +242,8 @@ namespace ABM.Persistence
                 await command.ExecuteNonQueryAsync();
             }
 
+            // One command object per table, reused for every run: only the
+            // parameter values change, which is faster than new commands.
             using var simulationCommand = connection.CreateCommand();
             using var environmentCommand = connection.CreateCommand();
             using var tickCommand = connection.CreateCommand();
@@ -231,6 +271,7 @@ namespace ABM.Persistence
 
         // ----------------------------------------------------------- reading
 
+        /// <inheritdoc />
         public async Task<Simulation?> GetSimulationAsync(Guid simulationId)
         {
             using var connection = await OpenAsync();
@@ -242,6 +283,7 @@ namespace ABM.Persistence
             return await reader.ReadAsync() ? ReadSimulation(reader) : null;
         }
 
+        /// <inheritdoc />
         public async Task<EnvironmentRecord?> GetEnvironmentAsync(Guid simulationId)
         {
             using var connection = await OpenAsync();
@@ -265,6 +307,7 @@ namespace ABM.Persistence
             };
         }
 
+        /// <inheritdoc />
         public async Task<TickRecord[]> GetTicksAsync(Guid simulationId)
         {
             using var connection = await OpenAsync();
@@ -294,6 +337,7 @@ namespace ABM.Persistence
             return ticks.ToArray();
         }
 
+        /// <inheritdoc />
         public async Task<AgentRecord[]> GetAgentsAsync(Guid simulationId)
         {
             using var connection = await OpenAsync();
@@ -320,6 +364,7 @@ namespace ABM.Persistence
             return agents.ToArray();
         }
 
+        /// <inheritdoc />
         public async Task<AgentState[]> GetAgentStatesAsync(Guid simulationId)
         {
             using var connection = await OpenAsync();
@@ -348,6 +393,7 @@ namespace ABM.Persistence
             return states.ToArray();
         }
 
+        /// <inheritdoc />
         public async Task<PatchRecord[]> GetPatchesAsync(Guid environmentId)
         {
             using var connection = await OpenAsync();
@@ -374,6 +420,7 @@ namespace ABM.Persistence
             return patches.ToArray();
         }
 
+        /// <inheritdoc />
         public async Task<RunListItem[]> ListSimulationsAsync(string? source = null, string? model = null, int limit = 200)
         {
             using var connection = await OpenAsync();
@@ -405,14 +452,17 @@ namespace ABM.Persistence
             return items.ToArray();
         }
 
+        /// <inheritdoc />
         public Task<Batch[]> ListBatchesAsync(int limit = 200) =>
             ReadBatchesAsync("ORDER BY CreatedAt DESC LIMIT $limit", includeSummary: false,
                 command => command.Parameters.AddWithValue("$limit", limit));
 
+        /// <inheritdoc />
         public Task<Batch[]> GetBatchGroupAsync(Guid groupId) =>
             ReadBatchesAsync("WHERE GroupId = $group ORDER BY Label", includeSummary: true,
                 command => command.Parameters.AddWithValue("$group", groupId.ToString()));
 
+        /// <inheritdoc />
         public async Task<Simulation[]> GetBatchRunsAsync(Guid batchId)
         {
             using var connection = await OpenAsync();
@@ -432,6 +482,7 @@ namespace ABM.Persistence
 
         // ---------------------------------------------------------- deleting
 
+        /// <inheritdoc />
         public async Task<bool> DeleteSimulationAsync(Guid simulationId)
         {
             using var connection = await OpenAsync();
@@ -441,6 +492,7 @@ namespace ABM.Persistence
             return await command.ExecuteNonQueryAsync() > 0;
         }
 
+        /// <inheritdoc />
         public async Task<int> DeleteBatchGroupAsync(Guid groupId)
         {
             using var connection = await OpenAsync();
@@ -452,14 +504,20 @@ namespace ABM.Persistence
 
         // ----------------------------------------------------------- helpers
 
+        // The Simulations columns in a fixed order. ReadSimulation reads them by
+        // position, so keep the two in sync if you add a column.
         private const string SimulationColumns =
             "Id, Model, ScenarioName, Source, Status, StartedAt, EndedAt, TickCount, Seed, ConfigurationJson, BatchId, RunNumber";
 
+        // How many Simulations columns there are, so ListSimulationsAsync knows
+        // where the extra grid-size columns start.
         private static readonly int SimulationColumnCount = SimulationColumns.Split(',').Length;
 
+        // "Id, Model, ..." becomes "s.Id, s.Model, ..." for queries that join tables.
         private static string Prefixed(string alias) =>
             string.Join(", ", SimulationColumns.Split(',').Select(c => $"{alias}.{c.Trim()}"));
 
+        // Builds a Simulation from the current row (columns in SimulationColumns order).
         private static Simulation ReadSimulation(SqliteDataReader reader) => new()
         {
             Id = Guid.Parse(reader.GetString(0)),
@@ -476,10 +534,13 @@ namespace ABM.Persistence
             RunNumber = reader.IsDBNull(11) ? null : reader.GetInt32(11)
         };
 
+        // Shared by ListBatchesAsync and GetBatchGroupAsync: same columns,
+        // different WHERE/ORDER BY (filter) and parameters (bind).
         private async Task<Batch[]> ReadBatchesAsync(string filter, bool includeSummary, Action<SqliteCommand> bind)
         {
             using var connection = await OpenAsync();
             using var command = connection.CreateCommand();
+            // The summary JSON can be large, so lists select an empty string instead.
             var summary = includeSummary ? "SummaryJson" : "''";
             command.CommandText =
                 $@"SELECT Id, GroupId, Label, Model, CreatedAt, Runs, BaseSeed, TickLimit, ConfigurationJson, PageSettingsJson, {summary}
@@ -509,6 +570,8 @@ namespace ABM.Persistence
             return batches.ToArray();
         }
 
+        // The Bind... helpers set a command's INSERT SQL and parameters for one
+        // row. They clear old parameters first so a command can be reused in a loop.
         private static void BindSimulation(SqliteCommand command, Simulation simulation)
         {
             command.CommandText =
@@ -559,11 +622,14 @@ namespace ABM.Persistence
             command.Parameters.AddWithValue("$metrics", JsonSerializer.Serialize(record.Metrics));
         }
 
+        // SQLite parameters need DBNull.Value rather than C# null.
         private static object Value(object? value) => value ?? DBNull.Value;
 
+        // DateTime -> text for the database (UTC, ISO 8601).
         private static string Date(DateTime value) =>
             value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
 
+        // Text from the database -> DateTime (keeps it as UTC).
         private static DateTime ParseDate(string value) =>
             DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
     }

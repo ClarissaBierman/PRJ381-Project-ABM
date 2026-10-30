@@ -1,7 +1,21 @@
+// =============================================================================
+// SchellingAgentTests.cs  (ABM.Core.Tests)
+//
+// Unit tests for SchellingAgent: when an agent counts itself happy or unhappy.
+// (Moving unhappy agents is the engine's job, tested in the Engine tests.)
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using Xunit;
 
 namespace ABM.Core.Tests;
 
+/// <summary>Tests for the Schelling segregation agent.</summary>
 public class SchellingAgentTests
 {
     private readonly Grid2D grid = new(10, 10, GridTopology.Bounded);

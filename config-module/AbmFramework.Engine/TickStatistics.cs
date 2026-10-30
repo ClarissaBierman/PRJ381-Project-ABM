@@ -1,36 +1,49 @@
+// =============================================================================
+// TickStatistics.cs  (AbmFramework.Engine)
+//
+// The numbers counted at the end of each tick. This is what feeds the live
+// chart and monitors, the database (one row per tick), the Excel/CSV exports
+// and the Compare results.
+//
+// SIR has its own fields (Susceptible, Infected, Recovered) because it was the
+// first model and the chart and database were built around it. Every other
+// model puts its numbers in the Metrics dictionary, for example
+// Metrics["Sheep"]. A new model should use Metrics too.
+// =============================================================================
+
 namespace AbmFramework.Engine;
 
+/// <summary>The statistics for one tick of a simulation.</summary>
 public sealed class TickStatistics
 {
-    //Current simulation tick.
+    /// <summary>The tick these numbers belong to (0 is the first tick).</summary>
     public int Tick { get; init; }
 
-    //Number of susceptible agents. Only meaningful for the SIR model;
-    //0 for every other model.
+    /// <summary>Number of susceptible agents. SIR only, 0 for every other model.</summary>
     public int Susceptible { get; init; }
 
-    //Number of infected agents. Only meaningful for the SIR model;
-    //0 for every other model.
+    /// <summary>Number of infected agents. SIR only, 0 for every other model.</summary>
     public int Infected { get; init; }
 
-    //Number of recovered agents. Only meaningful for the SIR model;
-    //0 for every other model.
+    /// <summary>Number of recovered agents. SIR only, 0 for every other model.</summary>
     public int Recovered { get; init; }
 
-    //Total number of agents in the simulation.
+    /// <summary>Total number of living agents.</summary>
     public int TotalPopulation { get; init; }
 
-    //Generic per-model metrics (e.g. "HappyAgents" for Schelling,
-    //"FoodCollected" for Ant Foraging). Empty for SIR, which uses the
-    //dedicated fields above for backward compatibility with the existing
-    //dashboard chart and persistence schema.
+    /// <summary>
+    /// Per-model numbers by name, for example "HappyAgents" for Schelling or
+    /// "FoodCollected" for Ant Foraging. Empty for SIR, which uses the
+    /// dedicated fields above for backward compatibility with the existing
+    /// dashboard chart and database tables.
+    /// </summary>
     public IReadOnlyDictionary<string, double> Metrics { get; init; } =
         new Dictionary<string, double>();
 
-    //Time the statistics were generated.
+    /// <summary>When the statistics were calculated (UTC).</summary>
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
 
-    //Returns a readable representation of the statistics.
+    /// <summary>A short readable summary, for console output and debugging.</summary>
     public override string ToString()
     {
         if (Metrics.Count == 0)

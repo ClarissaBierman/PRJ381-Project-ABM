@@ -1,3 +1,29 @@
+// =============================================================================
+// LiveSimulation.cs  (AbmFramework.Dashboard)
+//
+// LiveSimulationService runs THE live simulation shown on the dashboard.
+// There is only ever one live run at a time, shared by every open browser
+// tab (they all see the same run).
+//
+// What it does:
+//   - Start / Setup / Pause / Resume / Step / Reset / speed, called by SimulationHub.
+//   - Runs the SimulationEngine on a background task (Task.Run).
+//   - After every tick, sends the numbers ("ReceiveTick") and, at most about
+//     25 times a second, the grid picture ("ReceiveGrid") to every browser.
+//   - Hands every tick to a LiveRunRecorder, which saves the run to the database.
+//   - Continue (from Past runs): see ContinueAsync below.
+//
+// How Continue works (the clever bit): we don't save the whole world every
+// tick. We save the settings and the seed. Because the same seed always gives
+// the same run, replaying the run from tick 0 as fast as possible lands on
+// exactly the same moment it was stopped at. The page sees "Loading", then the
+// run appears paused at the saved tick with its full chart history.
+//
+// Threads: hub calls arrive on web request threads, while ticks run on the
+// engine's background thread. _lock makes sure two Start/Reset calls can't
+// overlap, and the tick list is locked whenever it is read or written.
+// =============================================================================
+
 using System.Text.Json;
 using ABM.Core;
 using ABM.Persistence.Models;
@@ -10,16 +36,23 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace AbmFramework.Dashboard;
 
+/// <summary>
+/// Runs the dashboard's single live simulation and streams it to every browser.
+/// Registered as a singleton in Program.cs.
+/// </summary>
 public class LiveSimulationService
 {
     private readonly IHubContext<SimulationHub> _hubContext;
     private readonly ILogger<LiveSimulationService> _logger;
     private readonly HistoryWriter _history;
+    // Only one Start/Continue/Reset at a time. (A SemaphoreSlim is used instead
+    // of "lock" because you can't await inside a lock block.)
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     private SimulationEngine? _engine;
     private CancellationTokenSource? _cts;
     private Task? _runTask;
+    // Goes up by one for every run, so the page can ignore messages from an old run.
     private int _nextRunId = 1;
 
     // The current run together with every tick it has produced so far, kept
@@ -38,14 +71,28 @@ public class LiveSimulationService
     private const int MinGridIntervalMs = 40;
     private long _lastGridSentMs;
 
+    /// <summary>Fastest speed the slider allows (milliseconds between ticks).</summary>
     public const int MinTickDelayMs = 10;
+
+    /// <summary>Slowest speed the slider allows.</summary>
     public const int MaxTickDelayMs = 1000;
 
+    /// <summary>The run on screen, or null if there isn't one.</summary>
     public RunInfo? CurrentRun => _activeRun?.Info;
+
+    /// <summary>
+    /// What the page shows next to the run: "Stopped", "Ready" (after Setup),
+    /// "Loading" (replaying for Continue), "Running", "Paused", "Completed" or "Error".
+    /// </summary>
     public string Status { get; private set; } = "Stopped";
+
+    /// <summary>The current speed (milliseconds between ticks). Kept between runs.</summary>
     public int TickDelayMs { get; private set; } = 50;
+
+    /// <summary>The latest grid picture, sent to pages that connect mid-run.</summary>
     public GridData? LastGrid => _lastGrid;
 
+    /// <summary>Created once by ASP.NET Core. IHubContext lets this service send to every browser.</summary>
     public LiveSimulationService(IHubContext<SimulationHub> hubContext, ILogger<LiveSimulationService> logger, HistoryWriter history)
     {
         _hubContext = hubContext;
@@ -53,25 +100,31 @@ public class LiveSimulationService
         _history = history;
     }
 
-    // The database id of the run on screen, if it is being saved.
+    /// <summary>The database id of the run on screen, if it is being saved.</summary>
     public Guid? CurrentHistoryId => _activeRun?.Recorder?.SimulationId;
 
-    // Called when the dashboard is closing: saves what the current run has so far.
+    /// <summary>Called when the dashboard is closing: saves what the current run has so far.</summary>
     public void SaveForShutdown()
     {
         _activeRun?.Recorder?.Finish("Stopped", null);
     }
 
-    // Writes the ticks the current run has buffered, so a read straight
-    // afterwards sees everything up to now.
+    /// <summary>
+    /// Writes the ticks the current run has buffered, so a read straight
+    /// afterwards (for example a download) sees everything up to now.
+    /// </summary>
     public Task FlushHistoryAsync()
     {
         _activeRun?.Recorder?.Flush();
         return _history.WhenIdleAsync();
     }
 
-    // startPaused is the dashboard's Setup button: agents are created and drawn
-    // at tick 0, then the run waits for Go or Go once.
+    /// <summary>
+    /// Starts a new live run, replacing any current one. startPaused is the
+    /// dashboard's Setup button: agents are created and drawn at tick 0, then
+    /// the run waits for Run or Step.
+    /// </summary>
+    /// <exception cref="ConfigValidationException">If the settings are invalid.</exception>
     public Task StartAsync(SimulationConfig config, bool startPaused = false)
     {
         ConfigLoader.Validate(config);
@@ -87,12 +140,17 @@ public class LiveSimulationService
         return StartCoreAsync(config, startPaused, null, null);
     }
 
-    // Continue on a run from Past runs. Returns a message if it can't be continued.
+    /// <summary>
+    /// Continues a run from Past runs by replaying it (same settings and seed)
+    /// up to the tick where it stopped, then pausing there. See the file header.
+    /// </summary>
+    /// <returns>A message for the user if it can't be continued, or null on success.</returns>
     public async Task<string?> ContinueAsync(Guid historyId)
     {
         if (!_history.Enabled) return _history.Problem ?? "Saving is turned off, so there is nothing to continue.";
         if (historyId == CurrentHistoryId) return "That run is already on screen. Press Run to carry on.";
 
+        // Make sure every queued write has landed before reading the run back.
         await _history.WhenIdleAsync();
         var repository = _history.Repository!;
         var saved = await repository.GetSimulationAsync(historyId);
@@ -125,6 +183,8 @@ public class LiveSimulationService
 
         var environment = await repository.GetEnvironmentAsync(historyId);
         var ticks = await repository.GetTicksAsync(historyId);
+        // The last saved tick, to check afterwards that the replay really
+        // arrived at the same numbers.
         var lastSaved = ticks.LastOrDefault(t => t.TickNumber == saved.TickCount - 1);
 
         var recorder = LiveRunRecorder.Continue(_history, config, historyId, environment?.Id ?? Guid.NewGuid(), saved.TickCount);
@@ -132,6 +192,10 @@ public class LiveSimulationService
         return null;
     }
 
+    // Shared by StartAsync and ContinueAsync: stops the current run, builds a
+    // new engine, wires up its events and starts it on a background task.
+    // continuing: the recorder to keep saving into (Continue), or null for a new run.
+    // replay: where to stop replaying (Continue), or null for a new run.
     private async Task StartCoreAsync(SimulationConfig config, bool startPaused, LiveRunRecorder? continuing, ContinueFrom? replay)
     {
         await _lock.WaitAsync();
@@ -161,6 +225,8 @@ public class LiveSimulationService
             var engine = new SimulationEngine { TickDelayMs = replay is null ? TickDelayMs : 0, StartPaused = startPaused };
             var cts = new CancellationTokenSource();
 
+            // Tick 0 exists: save the starting layout and draw it (not during a
+            // replay, where the page should only see the end result).
             engine.SimulationInitialised += (sender, e) =>
             {
                 var snapshot = engine.GetSnapshot();
@@ -175,6 +241,8 @@ public class LiveSimulationService
             engine.TickCompleted += (sender, stats) => OnTick(engine, activeRun, stats, cts.Token);
             engine.SimulationCompleted += (sender, e) =>
             {
+                // Only for a run that finished by itself, not one that was
+                // reset or replaced (that is handled in StopCurrentAsync).
                 if (!cts.IsCancellationRequested && ReferenceEquals(engine, _engine))
                 {
                     recorder?.Finish("Completed", engine.GetSnapshot());
@@ -191,6 +259,7 @@ public class LiveSimulationService
             await _hubContext.Clients.All.SendAsync("SimulationStarted", run);
             await SetStatusAsync(replay is not null ? "Loading" : startPaused ? "Ready" : "Running");
 
+            // Run the engine on a background thread so this method returns at once.
             _runTask = Task.Run(() => RunAsync(engine, config, recorder, cts.Token));
         }
         finally
@@ -199,6 +268,7 @@ public class LiveSimulationService
         }
     }
 
+    /// <summary>Pauses the run, saves what it has so far and sends the latest grid.</summary>
     public async Task PauseAsync()
     {
         if (_engine is null || !_engine.IsRunning) return;
@@ -209,6 +279,7 @@ public class LiveSimulationService
         await SetStatusAsync("Paused");
     }
 
+    /// <summary>Carries on after a pause.</summary>
     public async Task ResumeAsync()
     {
         if (_engine is null || !_engine.IsPaused) return;
@@ -217,6 +288,7 @@ public class LiveSimulationService
         await SetStatusAsync("Running");
     }
 
+    /// <summary>Runs one tick while paused.</summary>
     public async Task StepAsync()
     {
         if (_engine is null || !_engine.IsPaused) return;
@@ -228,6 +300,7 @@ public class LiveSimulationService
         }
     }
 
+    /// <summary>Changes the speed for this and future runs, and tells every page.</summary>
     public async Task SetSpeedAsync(int tickDelayMs)
     {
         TickDelayMs = Math.Clamp(tickDelayMs, MinTickDelayMs, MaxTickDelayMs);
@@ -241,6 +314,7 @@ public class LiveSimulationService
         await _hubContext.Clients.All.SendAsync("SpeedChanged", TickDelayMs);
     }
 
+    /// <summary>Stops and clears the current run. The page goes back to empty.</summary>
     public async Task ResetAsync()
     {
         await _lock.WaitAsync();
@@ -259,6 +333,9 @@ public class LiveSimulationService
         }
     }
 
+    // The background task: runs the engine until it ends. Cancelling is the
+    // normal way a run stops, so that exception is ignored. Anything else is
+    // a real error: it is logged and the page shows "Error".
     private async Task RunAsync(SimulationEngine engine, SimulationConfig config, LiveRunRecorder? recorder, CancellationToken token)
     {
         try
@@ -276,6 +353,8 @@ public class LiveSimulationService
         }
     }
 
+    // Cancels the current run, waits for its task to end, saves it as
+    // "Stopped" and clears everything. Callers must hold _lock.
     private async Task StopCurrentAsync()
     {
         if (_cts is null) return;
@@ -306,6 +385,7 @@ public class LiveSimulationService
         _runTask = null;
     }
 
+    // A snapshot, or null if the engine has nothing to snapshot (yet).
     private static SimulationSnapshot? TrySnapshot(SimulationEngine? engine)
     {
         try
@@ -318,8 +398,9 @@ public class LiveSimulationService
         }
     }
 
-    // Runs synchronously inside the engine's tick loop, so the agent list is
-    // copied before the next tick starts moving agents around.
+    // Called after every tick. Runs synchronously inside the engine's tick
+    // loop, so the agent list is copied (BuildGridData) before the next tick
+    // starts moving agents around. Keep this fast: the engine waits for it.
     private void OnTick(SimulationEngine engine, ActiveRun activeRun, TickStatistics stats, CancellationToken token)
     {
         lock (activeRun.Ticks)
@@ -341,6 +422,7 @@ public class LiveSimulationService
         var snapshot = engine.GetSnapshot();
         activeRun.Recorder?.OnTick(stats, snapshot);
 
+        // Replaying for Continue: send nothing until we reach the saved tick.
         if (activeRun.Replay is { } replay && stats.Tick < replay.SavedTicks)
         {
             if (stats.Tick < replay.SavedTicks - 1) return;
@@ -357,10 +439,13 @@ public class LiveSimulationService
         var grid = BuildGridData(snapshot, runId);
         _lastGrid = grid;
 
+        // Throttle the grid (but never the numbers): see MinGridIntervalMs.
+        // When paused, always send it so the page shows the exact tick.
         var now = Environment.TickCount64;
         var sendGrid = engine.IsPaused || now - _lastGridSentMs >= MinGridIntervalMs;
         if (sendGrid) _lastGridSentMs = now;
 
+        // "_ =" sends without waiting, so the engine isn't held up by the network.
         _ = BroadcastAsync(tick, sendGrid ? grid : null, token);
     }
 
@@ -387,6 +472,8 @@ public class LiveSimulationService
             await _hubContext.Clients.All.SendAsync("ReceiveGrid", grid, token);
             await SetStatusAsync("Paused");
 
+            // If the model code changed since the run was saved, the replay can
+            // end up somewhere slightly different. Warn the user if so.
             if (lastSaved is not null && !SameResult(reached, lastSaved))
             {
                 _logger.LogWarning("Continued run {Id} did not replay to the same values", activeRun.Recorder?.SimulationId);
@@ -404,6 +491,7 @@ public class LiveSimulationService
         }
     }
 
+    // True if a replayed tick has the same numbers as the saved one.
     private static bool SameResult(TickStatistics stats, TickRecord saved) =>
         stats.Susceptible == saved.Susceptible &&
         stats.Infected == saved.Infected &&
@@ -411,6 +499,9 @@ public class LiveSimulationService
         stats.Metrics.Count == saved.Metrics.Count &&
         stats.Metrics.All(m => saved.Metrics.TryGetValue(m.Key, out var v) && Math.Abs(v - m.Value) < 1e-9);
 
+    // Turns a snapshot into the GridData message: every agent with its state
+    // (plus energy for Wolf-Sheep, heading and speed for Boids), and every
+    // patch that has something to colour.
     private static GridData BuildGridData(SimulationSnapshot snapshot, int runId)
     {
         var grid = new GridData
@@ -470,8 +561,11 @@ public class LiveSimulationService
         };
     }
 
-    // Returns the run and a copy of its ticks so far, or null if runId is not
-    // the current run (it was reset or replaced since the page last saw it).
+    /// <summary>
+    /// Returns the run and a copy of its ticks so far, or null if runId is not
+    /// the current run (it was reset or replaced since the page last saw it).
+    /// Used by the Download button.
+    /// </summary>
     public (RunInfo Run, IReadOnlyList<TickStatistics> Ticks)? GetTickHistory(int runId)
     {
         var activeRun = _activeRun;
@@ -483,6 +577,8 @@ public class LiveSimulationService
         }
     }
 
+    // Sends one tick (and maybe the grid) to every page. Errors are logged,
+    // never thrown, because nobody is awaiting this.
     private async Task BroadcastAsync(TickData tick, GridData? grid, CancellationToken token)
     {
         try
@@ -502,6 +598,7 @@ public class LiveSimulationService
         }
     }
 
+    // Sends just the grid to every page.
     private async Task BroadcastGridAsync(GridData grid, CancellationToken token)
     {
         try
@@ -517,6 +614,7 @@ public class LiveSimulationService
         }
     }
 
+    // Updates Status and tells every page.
     private async Task SetStatusAsync(string status)
     {
         Status = status;

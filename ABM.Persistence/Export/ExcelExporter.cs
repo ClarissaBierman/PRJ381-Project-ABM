@@ -1,3 +1,25 @@
+// =============================================================================
+// ExcelExporter.cs  (ABM.Persistence.Export)
+//
+// Writes a real .xlsx file WITHOUT any NuGet package. An .xlsx file is just a
+// zip folder of small XML files (the "Office Open XML" format), so this class
+// writes the minimum set of those files by hand:
+//
+//   [Content_Types].xml          what type each file inside the zip is
+//   _rels/.rels                  points to the workbook
+//   xl/workbook.xml              the workbook, with one sheet
+//   xl/_rels/workbook.xml.rels   points to the sheet and the styles
+//   xl/styles.xml                two styles: normal (0) and bold (1)
+//   xl/worksheets/sheet1.xml     the actual rows and cells
+//
+// Why not just CSV? On South African regional settings Excel expects ';'
+// between columns, so a ',' CSV opens as one squashed column. An .xlsx always
+// opens straight into proper columns with real numbers.
+//
+// You normally don't need to touch the XML. To export something new, build
+// a list of rows and call Write(rows).
+// =============================================================================
+
 using System.Globalization;
 using System.IO.Compression;
 using System.Security;
@@ -6,14 +28,21 @@ using ABM.Persistence.Models;
 
 namespace ABM.Persistence.Export
 {
-    // Writes a simple .xlsx file. Unlike CSV, Excel opens it straight into
-    // columns with real numbers, whatever the computer's regional settings
-    // (South African settings expect ';' between columns in a CSV).
+    /// <summary>
+    /// Writes a simple .xlsx file. Unlike CSV, Excel opens it straight into
+    /// columns with real numbers, whatever the computer's regional settings
+    /// (South African settings expect ';' between columns in a CSV).
+    /// </summary>
     public static class ExcelExporter
     {
+        /// <summary>The MIME type to send with an .xlsx download, so the browser knows what it is.</summary>
         public const string ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-        // The same columns as the CSV export: Tick then S/I/R, or Tick then one column per metric.
+        /// <summary>
+        /// Builds an .xlsx of a run's ticks. The same columns as the CSV export:
+        /// Tick then S/I/R, or Tick then one column per metric.
+        /// </summary>
+        /// <returns>The file's bytes, ready to send as a download or save to disk.</returns>
         public static byte[] WriteTicks(IEnumerable<TickRecord> ticks, string sheetName = "Ticks")
         {
             var records = ticks.ToList();
@@ -40,9 +69,17 @@ namespace ABM.Persistence.Export
             return Write(rows, sheetName);
         }
 
-        // Numbers become number cells, everything else text. The first row is bold and stays visible when scrolling.
+        /// <summary>
+        /// Builds an .xlsx with one sheet from any table of values. Numbers
+        /// become number cells, everything else text. The first row is bold and
+        /// stays visible when scrolling. Null values leave the cell empty.
+        /// </summary>
+        /// <param name="rows">The table: a list of rows, each a list of cell values.</param>
+        /// <param name="sheetName">The sheet tab name (cleaned up to Excel's rules).</param>
+        /// <returns>The file's bytes.</returns>
         public static byte[] Write(IReadOnlyList<IReadOnlyList<object?>> rows, string sheetName = "Sheet1")
         {
+            // Build the zip in memory, then return its bytes.
             using var stream = new MemoryStream();
             using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
             {
@@ -92,6 +129,8 @@ namespace ABM.Persistence.Export
             return stream.ToArray();
         }
 
+        // Builds sheet1.xml: a frozen header row, a column width, then one <row>
+        // per row with one <c> (cell) per value. Cells are addressed like A1, B1.
         private static string Sheet(IReadOnlyList<IReadOnlyList<object?>> rows)
         {
             int columns = rows.Count == 0 ? 1 : Math.Max(1, rows.Max(r => r.Count));
@@ -112,6 +151,8 @@ namespace ABM.Persistence.Export
 
                     var cell = ColumnName(c) + (r + 1);
                     var style = r == 0 ? " s=\"1\"" : "";
+                    // "R" (round-trip) format keeps every digit of a double.
+                    // Text cells use "inlineStr" so no shared-strings file is needed.
                     if (Number(value) is { } number)
                     {
                         xml.Append($"<c r=\"{cell}\"{style}><v>{number.ToString("R", CultureInfo.InvariantCulture)}</v></c>");
@@ -128,6 +169,8 @@ namespace ABM.Persistence.Export
             return xml.ToString();
         }
 
+        // Returns the value as a double if it is a (finite) number, otherwise null.
+        // NaN and infinity aren't allowed in Excel, so they are written as text.
         private static double? Number(object value) => value switch
         {
             int i => i,
@@ -138,6 +181,7 @@ namespace ABM.Persistence.Export
             _ => null
         };
 
+        // 0 -> "A", 25 -> "Z", 26 -> "AA", 27 -> "AB", ... (Excel's column letters).
         private static string ColumnName(int index)
         {
             var name = "";
@@ -148,6 +192,7 @@ namespace ABM.Persistence.Export
             return name;
         }
 
+        // Excel sheet names can't contain [ ] : * ? / \ and are at most 31 characters.
         private static string SafeSheetName(string name)
         {
             var cleaned = new string(name.Where(ch => "[]:*?/\\".IndexOf(ch) < 0).ToArray()).Trim();
@@ -155,12 +200,15 @@ namespace ABM.Persistence.Export
             return cleaned.Length > 31 ? cleaned[..31] : cleaned;
         }
 
+        // Makes text safe inside XML: removes control characters XML doesn't
+        // allow, and turns < > & " ' into their XML escapes.
         private static string Escape(string text)
         {
             var clean = new string(text.Where(ch => ch == '\t' || ch == '\n' || ch == '\r' || ch >= ' ').ToArray());
             return SecurityElement.Escape(clean) ?? "";
         }
 
+        // Adds one text file to the zip, as UTF-8 without a byte-order mark.
         private static void Add(ZipArchive zip, string path, string content)
         {
             var entry = zip.CreateEntry(path, CompressionLevel.Optimal);

@@ -1,3 +1,31 @@
+// =============================================================================
+// Program.cs  (ConfigDemo console app)
+//
+// Runs a simulation from the command line, without the dashboard. Handy for
+// quick experiments, for scripting lots of runs, and for checking the engine
+// on its own.
+//
+// Usage (from the config-module/ConfigDemo folder):
+//   dotnet run -- --config ../configs/sir-default.json
+//   dotnet run -- --config ../configs/schelling-default.json --batch 20
+//
+// Flags:
+//   --config <file>   scenario file (.json, .yaml or .yml). Required.
+//   --seed <n>        override the file's RandomSeed
+//   --ticks <n>       override TickLimit
+//   --agents <n>      override AgentCount
+//   --batch <n>       run n Monte Carlo runs instead of one
+//
+// Output: everything is saved to simulations.db next to the program (a
+// SEPARATE database from the dashboard's), plus a CSV file of the results.
+//
+// In Visual Studio: set ConfigDemo as the startup project and press F5. The
+// arguments come from Properties/launchSettings.json.
+//
+// This file uses C# "top-level statements": the code below runs from the top,
+// and the static methods further down are helpers it calls.
+// =============================================================================
+
 using AbmFramework.Config;
 using AbmFramework.Engine;
 using ABM.Persistence;
@@ -5,6 +33,7 @@ using ABM.Persistence.Export;
 using ABM.Persistence.Models;
 using System.Text.Json;
 
+// Read the command-line flags.
 var options = ParseArgs(args);
 
 if (options.ConfigPath is null)
@@ -15,6 +44,8 @@ if (options.ConfigPath is null)
     return 1;
 }
 
+// Load the file, apply any flag overrides, then validate. The return values
+// (0 = success, 1 = error) are the program's exit code.
 SimulationConfig config;
 try
 {
@@ -47,6 +78,8 @@ if (options.BatchReplicates is int replicateCount)
 return await RunSingleAsync(config);
 
 // --- Single run: tick history, agents and agent states saved to SQLite, CSV export at the end. ---
+// Records everything in memory while the run goes, then saves it in one go at
+// the end (simple, and fine for console-sized runs).
 static async Task<int> RunSingleAsync(SimulationConfig config)
 {
     var dbPath = Path.Combine(AppContext.BaseDirectory, "simulations.db");
@@ -81,6 +114,7 @@ static async Task<int> RunSingleAsync(SimulationConfig config)
     var agents = new Dictionary<int, AgentRecord>();
     var states = new List<AgentState>();
 
+    // Called after every tick: print the numbers and record them.
     engine.TickCompleted += (sender, stats) =>
     {
         Console.WriteLine(stats);
@@ -96,6 +130,8 @@ static async Task<int> RunSingleAsync(SimulationConfig config)
             Metrics = stats.Metrics
         });
 
+        // Remember every agent that has ever existed, with the first and
+        // last tick it was alive, for the Agents table.
         var snapshot = engine.GetSnapshot();
         foreach (var agent in snapshot.Agents)
         {
@@ -134,6 +170,7 @@ static async Task<int> RunSingleAsync(SimulationConfig config)
         Console.WriteLine("Simulation completed.");
     };
 
+    // TickDelayMs is 50 by default, so this paces itself like the dashboard.
     await engine.StartAsync(config);
 
     await repository.SaveAgentsAsync(agents.Values.ToList());
@@ -157,6 +194,8 @@ static async Task<int> RunBatchAsync(SimulationConfig config, int replicateCount
 {
     Console.WriteLine($"Running {replicateCount} Monte Carlo replicates...");
 
+    // Use the file's seed as the base seed, or pick one, so the batch can
+    // always be repeated (the base seed is saved with it).
     int baseSeed = config.RandomSeed ?? Random.Shared.Next();
     var runner = new MonteCarloRunner();
     var results = await runner.RunAsync(config, replicateCount, baseSeed);
@@ -182,6 +221,7 @@ static async Task<int> RunBatchAsync(SimulationConfig config, int replicateCount
             new JsonSerializerOptions(JsonSerializerDefaults.Web))
     };
 
+    // Turn every run into the records the database expects.
     var runs = results.Select(result =>
     {
         var simulationId = Guid.NewGuid();
@@ -235,6 +275,8 @@ static async Task<int> RunBatchAsync(SimulationConfig config, int replicateCount
     return 0;
 }
 
+// Reads the --flags. Unknown flags, and flags with a missing or non-numeric
+// value, are silently ignored.
 static ParsedArgs ParseArgs(string[] args)
 {
     var result = new ParsedArgs();
@@ -266,6 +308,7 @@ static ParsedArgs ParseArgs(string[] args)
     return result;
 }
 
+// Prints the main settings before the run starts.
 static void PrintSummary(SimulationConfig config)
 {
     Console.WriteLine($"Scenario:            {config.ScenarioName}");
@@ -278,6 +321,7 @@ static void PrintSummary(SimulationConfig config)
     Console.WriteLine();
 }
 
+// The command-line flags. Null means "not given, use the file's value".
 internal sealed class ParsedArgs
 {
     public string? ConfigPath { get; set; }

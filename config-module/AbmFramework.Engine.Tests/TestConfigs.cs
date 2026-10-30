@@ -1,3 +1,10 @@
+// =============================================================================
+// TestConfigs.cs  (AbmFramework.Engine.Tests)
+//
+// Test helper: ready-made small scenarios for each model, shared by the
+// Engine tests. See the comment on the class.
+// =============================================================================
+
 using AbmFramework.Config;
 
 namespace AbmFramework.Engine.Tests;
@@ -10,6 +17,8 @@ internal static class TestConfigs
     public static IEnumerable<object[]> AllModels =>
         Enum.GetValues<ModelType>().Select(m => new object[] { m });
 
+    // ADD A MODEL: add a small, fast config for it here. Tests that run for
+    // every model fail with ArgumentOutOfRangeException until you do.
     public static SimulationConfig For(ModelType model, int tickLimit = 30, int? seed = 123) => model switch
     {
         ModelType.SIR => new SimulationConfig

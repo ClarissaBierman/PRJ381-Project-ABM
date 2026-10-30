@@ -2,6 +2,16 @@
 
 An agent-based modelling (ABM) framework built in C# and .NET 8, with a live web dashboard inspired by NetLogo. It runs five classic models, shows them on a grid in real time, and can run a model many times to compare results (Monte Carlo).
 
+## Start here (new to the project?)
+
+1. [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md): install the tools, run the dashboard and the tests.
+2. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): what each project does and how a run works.
+3. [docs/ADDING-A-MODEL.md](docs/ADDING-A-MODEL.md): step by step, every file a new model touches.
+4. [docs/TESTING.md](docs/TESTING.md), [docs/DATABASE.md](docs/DATABASE.md) and [docs/TEAM-WORKFLOW.md](docs/TEAM-WORKFLOW.md) when you need them.
+5. [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md): things we know about, and ideas for what to build next.
+
+Every source file starts with a comment explaining its job, and every class and method has a description you can see by hovering over it in Visual Studio.
+
 ## Models
 
 | Model | What it shows |
@@ -39,12 +49,13 @@ AbmFramework.Dashboard/        ASP.NET Core web app (SignalR + Chart.js)
   History/                       Saves live runs and Compare batches in the background
   Controllers/                   Downloads (CSV and Excel) and the Past runs API (api/history)
   wwwroot/                       index.html, js/grid.js, js/compare.js, js/history.js, css/
+docs/                          Guides for new developers (start with GETTING-STARTED.md)
 config-module/
   AbmFramework.Config/           SimulationConfig and ConfigLoader (JSON/YAML, validation)
   AbmFramework.Config.Tests/     Tests for loading and validating settings
   AbmFramework.Engine/           SimulationEngine, schedulers, Monte Carlo runner
   AbmFramework.Engine.Tests/     Tests for the engine, each model and Compare
-  ConfigDemo/                    Small console app to try config files
+  ConfigDemo/                    Console app that runs a scenario file without the dashboard
   configs/                       Example scenario files
 ```
 

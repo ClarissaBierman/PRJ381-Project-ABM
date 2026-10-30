@@ -1,7 +1,21 @@
+// =============================================================================
+// WolfSheepAgentTests.cs  (ABM.Core.Tests)
+//
+// Unit tests for SheepAgent and WolfAgent: losing energy, eating, starving,
+// having offspring and moving. Uses FixedRandom so every roll is predictable.
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using Xunit;
 
 namespace ABM.Core.Tests;
 
+/// <summary>Tests for the sheep.</summary>
 public class SheepAgentTests
 {
     // A roll of 0.999 fails any reproduction check below 1; 0.0 passes it.
@@ -97,6 +111,7 @@ public class SheepAgentTests
     }
 }
 
+/// <summary>Tests for the wolves.</summary>
 public class WolfAgentTests
 {
     private static readonly Random NoReproduce = new FixedRandom(0.999);

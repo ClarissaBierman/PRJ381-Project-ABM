@@ -1,10 +1,24 @@
+// =============================================================================
+// ModelCatalog.cs  (AbmFramework.Dashboard)
+//
+// The dashboard's list of models: the name and description shown on the page,
+// and the default settings each model starts with when you pick it.
+//
+// Presets (like Wolf-Sheep's "Stable populations") are NOT here, they live in
+// the page (wwwroot/index.html, the "presets" object).
+//
+// ADD A MODEL: add a DisplayName, a Description and a BuildConfig case.
+// =============================================================================
+
 using AbmFramework.Config;
 using AbmFramework.Dashboard.Models;
 
 namespace AbmFramework.Dashboard;
 
+/// <summary>Names, descriptions and default settings of every model, for the dashboard.</summary>
 public static class ModelCatalog
 {
+    /// <summary>Every model, in ModelType order, for the model drop-down.</summary>
     public static IReadOnlyList<ModelOption> Options { get; } = Enum.GetValues<ModelType>()
         .Select(m => new ModelOption
         {
@@ -14,6 +28,7 @@ public static class ModelCatalog
         })
         .ToList();
 
+    /// <summary>The friendly name shown on the page, e.g. "Wolf-Sheep Predation".</summary>
     public static string DisplayName(ModelType model) => model switch
     {
         ModelType.SIR => "SIR Epidemic",
@@ -24,6 +39,7 @@ public static class ModelCatalog
         _ => model.ToString()
     };
 
+    /// <summary>The one-sentence explanation shown under the model's name.</summary>
     public static string Description(ModelType model) => model switch
     {
         ModelType.SIR =>
@@ -39,6 +55,11 @@ public static class ModelCatalog
         _ => string.Empty
     };
 
+    /// <summary>
+    /// The settings a model starts with on the dashboard. These fill in the
+    /// sliders when the model is picked. Any setting not listed keeps the
+    /// default from SimulationConfig.
+    /// </summary>
     public static SimulationConfig BuildConfig(ModelType model) => model switch
     {
         ModelType.Schelling => new SimulationConfig
@@ -95,6 +116,7 @@ public static class ModelCatalog
             Scheduler = SchedulerKind.Random
         },
 
+        // SIR (and the fallback for anything unknown).
         _ => new SimulationConfig
         {
             ScenarioName = DisplayName(ModelType.SIR),

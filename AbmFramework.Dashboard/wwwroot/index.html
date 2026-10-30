@@ -1,10 +1,26 @@
 <!doctype html>
+<!--
+    index.html: the ABM.NET dashboard page.
+
+    One page, three columns:
+      left    Simulation settings (sliders, presets, grid size, seed)
+      middle  model title, status, monitors and the grid (drawn by js/grid.js)
+      right   the live chart and the Agent inspector
+    Compare (js/compare.js) and Past runs (js/history.js) open as pop-up windows.
+
+    Live updates come from the server over SignalR (/simulationHub), see the
+    big script block at the bottom. Files and downloads come from the /api
+    controllers. The styles for this page are in the <style> block below;
+    compare.css and history.css style the two pop-up windows.
+-->
 <html>
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ABM Framework Dashboard</title>
     <script>
+        // Picks light or dark mode before the page is drawn, so it doesn't
+        // flash white first: the saved choice, otherwise the computer's setting.
         (() => {
             let theme = null;
             try { theme = localStorage.getItem("abmTheme"); } catch { }
@@ -17,6 +33,7 @@
     <link rel="stylesheet" href="css/compare.css?v=2" />
     <link rel="stylesheet" href="css/history.css?v=1" />
     <style>
+        /* ---- Colours: light mode here, dark mode below. Everything else uses these var(--...) values. ---- */
         :root {
             --bg: #f5f5f5;
             --panel: #ffffff;
@@ -66,6 +83,7 @@
             flex-direction: column;
         }
 
+        /* ---- Top bar ---- */
         header {
             background: #1f2a44;
             color: white;
@@ -94,6 +112,7 @@
             font-weight: bold;
         }
 
+        /* ---- Three-column layout and the draggable gutters between columns ---- */
         main {
             --left: 290px;
             --middle: minmax(0, 1fr);
@@ -144,6 +163,7 @@
 
         .sidebar { overflow-y: auto; }
 
+        /* ---- Buttons, the Download menu and the speed slider ---- */
         select, button {
             font-size: 14px;
             padding: 6px 12px;
@@ -223,6 +243,7 @@
             min-width: 90px;
         }
 
+        /* ---- Settings panel (sliders, number boxes, run options) ---- */
         #parameterControls { display: grid; grid-template-columns: 1fr; gap: 8px; }
         .parameter-control { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; font-size: 13px; }
         .parameter-control input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 2px 0; }
@@ -238,6 +259,7 @@
         #validationErrors { color: #a52834; white-space: pre-line; font-weight: bold; font-size: 13px; margin: 10px 0 0; }
         #validationErrors:empty { display: none; }
 
+        /* ---- Model title, status badge and tick counter ---- */
         .model-heading {
             display: flex;
             flex-wrap: wrap;
@@ -277,6 +299,7 @@
             font-size: 13px;
         }
 
+        /* ---- Panels, the grid, its legend and the monitors ---- */
         .panels {
             display: flex;
             flex-wrap: wrap;
@@ -382,6 +405,7 @@
 
         #grid { cursor: pointer; }
 
+        /* ---- The little "i" tooltips ---- */
         .info {
             display: inline-flex;
             align-items: center;
@@ -451,6 +475,7 @@
 
         .panel-title { display: flex; align-items: center; }
 
+        /* ---- Movable panels (drag a panel's grip onto another to swap them) ---- */
         .slot {
             display: flex;
             flex-direction: column;
@@ -506,6 +531,7 @@
             padding: 5px 10px;
         }
 
+        /* ---- Agent inspector ---- */
         .inspect-hint {
             font-size: 13px;
             color: var(--muted);
@@ -591,6 +617,7 @@
             color: var(--muted);
         }
 
+        /* ---- Display switches (Show grass, Show energy, ...) ---- */
         .display-switches {
             display: flex;
             flex-wrap: wrap;
@@ -675,6 +702,8 @@
     </style>
 </head>
 <body>
+    <!-- Top bar: model picker, Setup / Run / Step / Reset, Download, Past runs,
+         speed, Reset layout and dark mode. Compare adds its own button here. -->
     <header>
         <h1>ABM Framework Dashboard</h1>
         <div class="controls">
@@ -708,6 +737,8 @@
     </header>
 
     <main>
+        <!-- Left column: simulation settings. Its sliders are built by
+             renderConfiguration() in the script below. -->
         <aside class="column sidebar slot" data-slot="left">
             <div class="panel parameter-panel" data-panel="settings">
                 <h3><span class="panel-grip" title="Drag to move this panel" aria-hidden="true"></span>Simulation settings</h3>
@@ -744,6 +775,7 @@
 
         <div class="gutter" data-resize="left" title="Drag to resize. Double-click to reset."></div>
 
+        <!-- Middle column: model title, status, monitors and the grid canvas. -->
         <section class="column slot" data-slot="middle">
             <div class="grid-unit" data-panel="grid">
             <div>
@@ -754,7 +786,7 @@
                     <span id="tickCounter" class="tick"></span>
                     <button id="saveGridImage" class="panel-action" title="Save the grid as a PNG image">Save image</button>
                 </div>
-                <p id="modelDescription">Pick a model and press Start.</p>
+                <p id="modelDescription">Pick a model, press Setup, then Run.</p>
             </div>
 
             <div class="panel grid-panel">
@@ -787,6 +819,7 @@
 
         <div class="gutter" data-resize="middle" title="Drag to resize. Double-click to reset."></div>
 
+        <!-- Right column: the live chart, and the Agent inspector below it. -->
         <section class="column" id="rightColumn">
             <div id="monitors" class="monitors"></div>
 
@@ -812,6 +845,10 @@
     </main>
     <div id="tipBox" class="tip-box" role="tooltip" hidden></div>
 
+    <!-- Libraries from a CDN (needs internet the first time), then our own
+         scripts. grid.js must load before the main script below, which uses it.
+         The ?v=... numbers make browsers fetch a fresh copy after a change:
+         bump the number when you edit that file. -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
     <script src="js/grid.js?v=4"></script>
@@ -819,6 +856,32 @@
     <script src="js/history.js?v=3"></script>
 
     <script>
+        // =====================================================================
+        // The dashboard's main script.
+        //
+        // Sections, in order:
+        //   1. Page elements and the speed slider
+        //   2. Settings panel: run options, sliders, presets, limits, tooltips
+        //   3. Save image buttons
+        //   4. Chart (Chart.js) and dark mode
+        //   5. Monitors (the number boxes above the chart) and adding ticks
+        //   6. Run status, showing a new run, Continue from Past runs
+        //   7. Display switches and the Agent inspector
+        //   8. Resizable columns and draggable panels (saved in localStorage)
+        //   9. Clicking agents on the grid
+        //  10. SignalR: messages from the server, and the buttons that call it
+        //  11. Download menu and start-up
+        //
+        // Server side: Hubs/SimulationHub.cs and LiveSimulation.cs.
+        // Grid drawing lives in js/grid.js (loaded above), so functions like
+        // drawGrid, setGridSize and lastAgents come from there.
+        //
+        // Naming: the server sends C# property names in camelCase, so the
+        // SimulationConfig property "InitialSheep" is "initialSheep" here.
+        // =====================================================================
+
+        // ---- 1. Page elements and the speed slider ----------------------------
+
         const modelSelect = document.getElementById("modelSelect");
         const setupButton = document.getElementById("setupButton");
         const goButton = document.getElementById("goButton");
@@ -833,14 +896,18 @@
         const speedSlider = document.getElementById("speedSlider");
         const speedLabel = document.getElementById("speedLabel");
 
+        // The speed slider has 10 steps. Each step is a delay between ticks in
+        // milliseconds (1000 = 1 tick a second, 10 = about 100 a second).
         const speedLevels = [1000, 500, 250, 150, 100, 50, 30, 20, 15, 10];
         let speedTimer = null;
 
+        // Shows the speed as "~20 ticks/sec" next to the slider.
         function showSpeed(delayMs) {
             const ticksPerSecond = Math.round(1000 / delayMs);
             speedLabel.textContent = `~${ticksPerSecond} tick${ticksPerSecond === 1 ? "" : "s"}/sec`;
         }
 
+        // The slider step (1 to 10) closest to a delay sent by the server.
         function levelForDelay(delayMs) {
             let best = 0;
             speedLevels.forEach((d, i) => {
@@ -848,6 +915,14 @@
             });
             return best + 1;
         }
+
+        // ---- 2. Settings panel ----------------------------------------------
+        //
+        // How settings are stored: modelDefaults[model] holds the server's
+        // defaults (ModelCatalog.cs). pendingConfigs[model] holds what the user
+        // has set for that model so far, so switching models and back keeps
+        // their changes. activePending is the config being edited right now
+        // and is exactly what Setup sends to the server.
 
         const parameterControls = document.getElementById("parameterControls");
         const tickLimitInput = document.getElementById("tickLimit");
@@ -867,6 +942,7 @@
             activePending.topology = wrapEdgesInput.checked ? "Toroidal" : "Bounded";
         }
 
+        // Puts the pending settings into the boxes under the sliders.
         function fillRunOptions() {
             tickLimitInput.value = activePending.tickLimit;
             randomSeedInput.value = activePending.randomSeed ?? "";
@@ -877,6 +953,7 @@
         }
 
         // Returns an error message, or null when the boxes hold valid values.
+        // A quick check for the user. The server validates everything again.
         function checkRunOptions() {
             const whole = (text, min, max) => /^-?\d+$/.test(text) && Number(text) >= min && Number(text) <= max;
             if (!whole(gridWidthInput.value.trim(), 5, 200) || !whole(gridHeightInput.value.trim(), 5, 200)) {
@@ -900,6 +977,9 @@
         }
         const validationErrors = document.getElementById("validationErrors");
 
+        // The sliders for each model:
+        //   [SimulationConfig property, label, min, max, step, shown as a percent?]
+        // ADD A MODEL: add its sliders here (and tips below, presets if you like).
         const parameterDefinitions = {
             SIR: [
                 ["AgentCount", "Number of agents", 1, 10000, 1], ["InitialInfected", "Initial infected", 0, 10000, 1],
@@ -910,6 +990,7 @@
             AntForaging: [["AgentCount", "Number of ants", 1, 10000, 1], ["FoodSources", "Number of food piles", 1, 100, 1], ["FoodPerSource", "Food per pile", 1, 1000, 1], ["PheromoneDepositAmount", "Pheromone dropped", 0, 100, 0.1], ["PheromoneDecayRate", "Pheromone decay rate", 0, 1, 0.01], ["ExplorationChance", "Exploration chance", 0, 1, 0.01, true]],
             WolfSheep: [["InitialSheep", "Initial sheep", 0, 10000, 1], ["InitialWolves", "Initial wolves", 0, 10000, 1], ["GrassRegrowthProbability", "Grass regrowth chance", 0, 1, 0.01, true], ["GrassEnergyGain", "Sheep gain from food", 0.1, 100, 0.1], ["SheepEnergyGain", "Wolf gain from food", 0.1, 100, 0.1], ["SheepReproductionProbability", "Sheep reproduce", 0, 1, 0.01, true], ["WolfReproductionProbability", "Wolf reproduce", 0, 1, 0.01, true]]
         };
+        // The text shown when hovering the little "i" next to a slider.
         const parameterTips = {
             AgentCount: "How many agents are placed on the grid at the start.",
             InitialInfected: "How many agents start off infected.",
@@ -969,19 +1050,22 @@
         };
 
         const presetSelect = document.getElementById("presetSelect");
-        let presetChoice = {};
+        let presetChoice = {};    // the preset picked for each model ("Default", a name, or "Custom")
 
+        // Fills the preset drop-down for a model.
         function fillPresets(model) {
             const names = Object.keys(presets[model] || {});
             presetSelect.innerHTML = ["Default", ...names].map(n => `<option>${n}</option>`).join("") + `<option value="Custom" hidden>Custom</option>`;
             presetSelect.value = presetChoice[model] || "Default";
         }
 
+        // Any manual change turns the preset drop-down to "Custom".
         function markCustom() {
             presetChoice[modelSelect.value] = "Custom";
             presetSelect.value = "Custom";
         }
 
+        // Picking a preset = the model's defaults with the preset's values on top.
         presetSelect.addEventListener("change", () => {
             const model = modelSelect.value;
             const name = presetSelect.value;
@@ -994,8 +1078,12 @@
         let modelDefaults = {};
         let pendingConfigs = {};
         let activePending = null;
+        // "InitialSheep" -> "initialSheep" (the JSON name of a C# property).
         const configKey = name => name[0].toLowerCase() + name.slice(1);
 
+        // Builds the settings panel for a model: one slider plus number box per
+        // entry in parameterDefinitions, then the run options and presets.
+        // Saves whatever was typed for the previous model first.
         function renderConfiguration(model) {
             if (activePending) {
                 readRunOptions();
@@ -1089,6 +1177,7 @@
         // One shared tooltip, positioned on screen, so panels that scroll can't clip it.
         const tipBox = document.getElementById("tipBox");
 
+        // Shows the tooltip above (or below, if there is no room) an "i" icon.
         function showTip(icon) {
             tipBox.textContent = icon.dataset.tip;
             tipBox.hidden = false;
@@ -1109,6 +1198,8 @@
         // Clicking the i inside a switch's label shouldn't flip the switch.
         document.addEventListener("click", e => { if (e.target.closest?.(".info")) e.preventDefault(); });
 
+        // ---- 3. Save image buttons -----------------------------------------
+
         // Saves a canvas as a PNG on a solid background, so it isn't see-through in other programs.
         function saveCanvasImage(source, name, background) {
             const copy = document.createElement("canvas");
@@ -1127,6 +1218,7 @@
             }, "image/png");
         }
 
+        // A file name like "WolfSheep-grid-tick-120.png".
         function imageName(part) {
             const model = currentRun ? currentRun.model : modelSelect.value;
             const tick = (tickCounter.textContent.match(/Tick (\d+)/) || [])[1];
@@ -1142,13 +1234,17 @@
             saveCanvasImage(document.getElementById("statsChart"), imageName("chart"), getComputedStyle(panel).backgroundColor || "#ffffff");
         });
 
-        let currentRun = null;
-        let currentStatus = "Stopped";
+        // ---- 4. Chart and dark mode ------------------------------------------
 
+        let currentRun = null;          // the RunInfo of the run on screen (from SimulationStarted), or null
+        let currentStatus = "Stopped";  // the latest SimulationStatus
+
+        // Line colours, handed out in order to series without a fixed colour.
         const seriesColors = [
             "rgba(54,162,235,1)", "rgba(255,99,132,1)", "rgba(75,192,192,1)",
             "rgba(255,193,7,1)", "rgba(155,89,182,1)", "rgba(23,162,184,1)"
         ];
+        // Fixed colours for some values, so sheep are always yellow and wolves dark.
         const modelMetricColors = {
             Sheep: "rgba(241,196,15,1)",
             Wolves: "rgba(52,73,94,1)"
@@ -1159,25 +1255,31 @@
             Wolves: "rgba(143,163,191,1)"
         };
 
+        // The fixed colour for a value in the current theme, or undefined.
         function metricColor(key) {
             const dark = document.documentElement.dataset.theme === "dark";
             return (dark && darkModeColors[key]) || modelMetricColors[key];
         }
-        const sirKeys = ["Susceptible", "Infected", "Recovered"];
 
-        // Every tick of the run is kept as an {x, y} point. Once a series has
-        // more points than the chart has pixels, Chart.js's decimation plugin
-        // thins them at draw time (LTTB keeps the curve's shape and peaks),
-        // so a long run stays fully visible without slowing the chart down.
-        // Decimation requires parsing: false and a linear x axis.
+        // Text and grid-line colours for the current theme.
         function themeColors() {
             const dark = document.documentElement.dataset.theme === "dark";
             return { text: dark ? "#c3cad8" : "#555555", grid: dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)" };
         }
 
+        // Default text and grid-line colours for every chart on the page.
         Chart.defaults.color = themeColors().text;
         Chart.defaults.borderColor = themeColors().grid;
 
+        // The live chart. Axes: "y" for counts, "y1" (0 to 1, hidden unless
+        // needed) for fractions like Schelling's happy fraction, and "y2" for
+        // grass, which is far bigger than the animal counts.
+        //
+        // Every tick of the run is kept as an {x, y} point. Once a series has
+        // more points than the chart has pixels, Chart.js's decimation plugin
+        // thins them at draw time (LTTB keeps the curve's shape and peaks),
+        // so a long run stays fully visible without slowing the chart down.
+        // Decimation requires parsing: false and a linear x axis.
         const chartData = { datasets: [] };
         const statsChart = new Chart(document.getElementById("statsChart").getContext("2d"), {
             type: "line",
@@ -1218,10 +1320,13 @@
 
         const themeToggle = document.getElementById("themeToggle");
 
+        // Makes the dark-mode switch match the current theme.
         function showThemeButton() {
             themeToggle.checked = document.documentElement.dataset.theme === "dark";
         }
 
+        // Switches light/dark mode: remembers it, recolours the chart lines,
+        // monitors and every chart's text and grid lines.
         function applyTheme(theme) {
             document.documentElement.dataset.theme = theme;
             try { localStorage.setItem("abmTheme", theme); } catch { }
@@ -1259,6 +1364,7 @@
 
         showThemeButton();
 
+        // Empties the chart for a new run.
         function resetChart() {
             chartData.datasets.length = 0;
             pointsByKey = {};
@@ -1267,10 +1373,14 @@
             statsChart.update("none");
         }
 
+        // "HappyAgents" -> "Happy Agents".
         function prettyLabel(key) {
             return key.replace(/([a-z])([A-Z])/g, "$1 $2");
         }
 
+        // Returns the points array of a chart line, creating the line the first
+        // time a value appears. So the chart grows its lines from whatever
+        // values the model sends, with no per-model code.
         function ensureSeries(key) {
             if (key in pointsByKey) return pointsByKey[key];
 
@@ -1297,14 +1407,20 @@
             return points;
         }
 
+        // ---- 5. Monitors and adding ticks -------------------------------------
+        // Monitors are the number boxes above the chart, like NetLogo's monitors.
+        // Like the chart lines, a box is created the first time a value appears.
+
         const monitorsEl = document.getElementById("monitors");
         let monitorValues = {};
 
+        // Removes every monitor box for a new run.
         function resetMonitors() {
             monitorsEl.innerHTML = "";
             monitorValues = {};
         }
 
+        // The tooltip text for each monitor.
         const monitorTips = {
             Tick: "How many ticks have run. One tick is one round where every agent takes a turn.",
             Susceptible: "People who have not caught it yet and can still get infected.",
@@ -1323,20 +1439,24 @@
             Grass: "Cells that have grass right now (the green ones)."
         };
 
+        // The "i" icon HTML for a monitor, if it has a tip.
         function monitorTip(key) {
             const text = monitorTips[key];
             return text ? `<span class="info" tabindex="0" data-tip="${text}">i</span>` : "";
         }
 
+        // A monitor's title. Fractions are shown as percentages: "Happy %".
         function monitorLabel(key) {
             return key.endsWith("Fraction") ? prettyLabel(key.slice(0, -"Fraction".length)) + " %" : prettyLabel(key);
         }
 
+        // A monitor's value: 45.2% for fractions, 1,234 for counts, 3.14 otherwise.
         function formatMonitor(key, value) {
             if (key.endsWith("Fraction")) return (value * 100).toFixed(1) + "%";
             return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
         }
 
+        // Updates one monitor box, creating it the first time.
         function setMonitor(key, value) {
             if (!(key in monitorValues)) {
                 const box = document.createElement("div");
@@ -1351,11 +1471,15 @@
             monitorValues[key].textContent = formatMonitor(key, value);
         }
 
+        // Updates the Tick box and every value box.
         function updateMonitors(tickNumber, values) {
             setMonitor("Tick", tickNumber);
             Object.entries(values).forEach(([key, value]) => setMonitor(key, value));
         }
 
+        // Handles one "ReceiveTick": updates the monitors, adds a point to every
+        // chart line and asks for a redraw on the next screen frame. SIR's
+        // S/I/R come as separate fields, every other model uses tick.metrics.
         function addTick(tick) {
             const values = currentRun && currentRun.model === "SIR"
                 ? { Susceptible: tick.susceptible, Infected: tick.infected, Recovered: tick.recovered }
@@ -1378,6 +1502,7 @@
         let pendingGrid = null;
         let frameQueued = false;
 
+        // Asks the browser to redraw once on its next frame (requestAnimationFrame).
         function queueFrame() {
             if (frameQueued) return;
             frameQueued = true;
@@ -1406,6 +1531,8 @@
             statsChart.update("none");
         }
 
+        // ---- 6. Run status, new runs and Continue -----------------------------
+
         // Called from Past runs: shows the run's settings, then asks the server
         // to replay it to where it stopped.
         async function continueSavedRun(run) {
@@ -1418,6 +1545,8 @@
             if (problem) validationErrors.textContent = problem;
         }
 
+        // Handles "SimulationStatus": updates the badge and which buttons work.
+        // The Run button doubles as Pause while running.
         function setStatus(status) {
             currentStatus = status;
             statusBadge.textContent = status;
@@ -1432,6 +1561,7 @@
             resetButton.disabled = status === "Stopped";
         }
 
+        // Handles "SimulationStarted": a new run, so reset the title, chart, monitors and grid.
         function showRun(run) {
             currentRun = run;
             modelTitle.textContent = run.displayName;
@@ -1448,11 +1578,12 @@
             updateDisplaySwitches();
         }
 
+        // Handles "SimulationReset": no run any more, so clear everything.
         function showNoRun() {
             currentRun = null;
             downloadButton.disabled = true;
             modelTitle.textContent = "No simulation running";
-            modelDescription.textContent = "Pick a model and press Start.";
+            modelDescription.textContent = "Pick a model, press Setup, then Run.";
             chartTitle.textContent = "Statistics";
             tickCounter.textContent = "";
             document.title = "ABM Framework Dashboard";
@@ -1463,11 +1594,16 @@
             updateDisplaySwitches();
         }
 
+        // ---- 7. Display switches and the Agent inspector --------------------
+
         // Display switches only change how the grid is drawn, so they apply
         // instantly (even while paused) and never touch the server.
         const displaySwitches = document.getElementById("displaySwitches");
         const energyHint = document.getElementById("energyHint");
 
+        // Shows only the switches that apply to the current model (each switch
+        // lists its models in data-models), and the hint when energy labels
+        // don't fit because the cells are too small.
         function updateDisplaySwitches() {
             const model = currentRun ? currentRun.model : modelSelect.value;
             let anyVisible = false;
@@ -1496,6 +1632,7 @@
 
         const inspector = document.getElementById("inspector");
 
+        // The "Type" shown in the inspector, by icon shape.
         const agentTypes = {
             person: "Person",
             happy: "Resident",
@@ -1507,6 +1644,8 @@
             wolf: "Wolf"
         };
 
+        // A boid's heading as degrees and a compass point, e.g. "90° (E)".
+        // Screen y points down, so +90 turns "0 = right" into "0 = north".
         function compass(heading) {
             const degrees = (heading * 180 / Math.PI + 90 + 360) % 360;
             const points = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -1515,30 +1654,35 @@
 
         const inspectHint = document.getElementById("inspectHint");
 
+        // Empties the inspector and shows the "click an agent" hint again.
         function hideInspector() {
             inspector.hidden = true;
             inspector.innerHTML = "";
             inspectHint.hidden = false;
         }
 
+        // Puts cards into the inspector and hides the hint.
         function showInspector(html) {
             inspector.innerHTML = html;
             inspector.hidden = false;
             inspectHint.hidden = true;
         }
 
+        // "Clear all": deselects everything.
         function closeInspector() {
             selectAgent(null);
             hideInspector();
         }
 
+        // The × on one card: stops watching that agent.
         function removeFromInspector(id) {
             setSelection(selectedAgentIds.filter(other => other !== id));
             if (selectedAgentIds.length === 0) hideInspector();
         }
 
-        let inspectorNote = "";
+        let inspectorNote = "";   // a message shown above the cards, e.g. "up to 6 agents"
 
+        // One agent's card: type, state, position and, if the model has them, energy, heading and speed.
         function inspectorCard(id, index) {
             const ring = `<span class="ring-dot" style="border-color:${selectionColor(index)}" title="Ring colour on the grid"></span>`;
             const closeButton = `<button class="inspector-close" title="Remove" onclick="removeFromInspector(${id})">&times;</button>`;
@@ -1563,6 +1707,7 @@
                 <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div>`;
         }
 
+        // Redraws the inspector after every grid frame, so the values stay live.
         function renderInspector() {
             if (selectedAgentIds.length === 0) {
                 hideInspector();
@@ -1577,6 +1722,12 @@
             showInspector(bar + selectedAgentIds.map(inspectorCard).join(""));
         }
 
+        // ---- 8. Layout: resizable columns and draggable panels ----------------
+
+        // Column widths and the inspector height can be dragged on the
+        // "gutters" between them. Sizes are remembered in localStorage.
+        // Double-click a gutter to reset it. Wrapped in (() => { ... })() so its
+        // helper functions stay private. Returns { apply, reset }.
         const layout = (() => {
             const main = document.querySelector("main");
             const rightColumn = document.getElementById("rightColumn");
@@ -1667,6 +1818,8 @@
         })();
 
         // Panels can be dragged by their grip onto another panel to swap places.
+        // Which panel is in which "slot" is remembered in localStorage too.
+        // Returns { reset, current }.
         const panelLayout = (() => {
             const storageKey = "abmPanelSlots";
             const slots = [...document.querySelectorAll(".slot")];
@@ -1748,16 +1901,21 @@
 
         const gridBox = document.getElementById("gridBox");
 
+        // Makes the grid as big as its box allows (called whenever the box changes size).
         function fitGrid() {
             fitGridTo(Math.min(gridBox.clientWidth, gridBox.clientHeight) - 2);
         }
 
         new ResizeObserver(fitGrid).observe(gridBox);
 
+        // grid.js calls this after drawing each frame.
         function onGridDrawn() {
             renderInspector();
         }
 
+        // ---- 9. Clicking agents on the grid ----------------------------------
+        // Click: inspect the agents on that cell. Ctrl/Shift/Cmd+click: add or
+        // remove them from the watched set (up to MAX_SELECTED).
         canvas.addEventListener("click", event => {
             if (!lastGrid) return;
 
@@ -1788,6 +1946,11 @@
             }
         });
 
+        // ---- 10. SignalR: talking to the server -------------------------------
+        // connection.on("Name", ...) handles a message the server sends.
+        // connection.invoke("Name", ...) calls a SimulationHub method.
+        // Every tick and grid message carries runId, so late messages from a
+        // run that was already replaced are ignored.
         const connection = new signalR.HubConnectionBuilder()
             .withUrl("/simulationHub")
             .withAutomaticReconnect()
@@ -1808,6 +1971,7 @@
             addTick(tick);
         });
 
+        // A continued run arrives with all its ticks at once.
         connection.on("ReceiveTickHistory", ticks => {
             if (!currentRun || ticks.length === 0 || ticks[0].runId !== currentRun.runId) return;
             tickCounter.textContent = `Tick ${ticks[ticks.length - 1].tick + 1} / ${currentRun.tickLimit}`;
@@ -1818,12 +1982,15 @@
             validationErrors.textContent = message;
         });
 
+        // Keep only the newest grid. queueFrame draws it on the next screen frame.
         connection.on("ReceiveGrid", grid => {
             if (!currentRun || grid.runId !== currentRun.runId) return;
             pendingGrid = grid;
             queueFrame();
         });
 
+        // Setup: check the boxes, then send the settings. The server builds the
+        // run and waits at tick 0. Server-side errors are shown in red.
         setupButton.addEventListener("click", () => {
             const problem = checkRunOptions();
             validationErrors.textContent = problem || "";
@@ -1837,6 +2004,7 @@
             });
         });
 
+        // Run / Pause (the same button).
         goButton.addEventListener("click", () => {
             const method = currentStatus === "Running" ? "PauseSimulation" : "ResumeSimulation";
             connection.invoke(method).catch(err => console.error(err));
@@ -1849,6 +2017,8 @@
         resetButton.addEventListener("click", () => {
             connection.invoke("ResetSimulation").catch(err => console.error(err));
         });
+
+        // ---- 11. Download menu and start-up -----------------------------------
 
         // Fetches the file rather than navigating to it, so a failed download
         // shows a message instead of replacing the dashboard with an error page.
@@ -1886,6 +2056,8 @@
             }
         });
 
+        // The new speed is sent 120 ms after the slider stops moving, instead of
+        // on every pixel of the drag.
         speedSlider.addEventListener("input", () => {
             const delayMs = speedLevels[speedSlider.value - 1];
             showSpeed(delayMs);
@@ -1897,6 +2069,9 @@
 
         showSpeed(speedLevels[speedSlider.value - 1]);
 
+        // Start-up: connect to the server, load the models and their defaults,
+        // and build the settings panel. If a run is already going (another tab
+        // started it), SimulationStarted arrives first and shows it.
         async function init() {
             try {
                 await connection.start();

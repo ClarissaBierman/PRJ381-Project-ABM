@@ -1,20 +1,35 @@
+// =============================================================================
+// MonteCarloCsvExporter.cs  (AbmFramework.Engine)
+//
+// Writes a Monte Carlo batch to a CSV file with one row per run: its index,
+// seed, final tick, the final SIR counts (0 for other models) and one column
+// for every metric any run reported (0 where a run didn't report it).
+//
+// Used by the ConfigDemo console app. The dashboard has its own exporters in
+// ABM.Persistence/Export.
+//
+// Note: the whole file is built in memory and written in one go. That is fine
+// for hundreds of runs. For very large batches, writing row by row with a
+// StreamWriter would use less memory.
+// =============================================================================
+
 using System.Globalization;
 using System.Text;
 
 namespace AbmFramework.Engine;
 
-// Writes one summary row per Monte Carlo replicate: its seed, final tick's
-// SIR counts (0 for non-SIR models) and every metric key seen across any
-// replicate's final statistics (0 where a given replicate didn't report
-// that key). Streams rows as it writes rather than holding everything in
-// memory, per the project's guidance to use streaming CSV output for
-// batches beyond roughly 100 replicates.
+/// <summary>Saves Monte Carlo results as a CSV file, one row per run.</summary>
 public static class MonteCarloCsvExporter
 {
+    /// <summary>Writes the results to <paramref name="filePath"/>, replacing the file if it exists.</summary>
+    /// <param name="results">The runs to write, usually from <see cref="MonteCarloRunner.RunAsync"/>.</param>
+    /// <param name="filePath">Where to save the CSV.</param>
     public static async Task ExportAsync(
         IReadOnlyList<MonteCarloReplicateResult> results,
         string filePath)
     {
+        // Every metric name that appears in any run, sorted, so the columns
+        // are the same for every row.
         var metricKeys = results
             .SelectMany(r => r.FinalStatistics.Metrics.Keys)
             .Distinct()
@@ -23,6 +38,7 @@ public static class MonteCarloCsvExporter
 
         var builder = new StringBuilder();
 
+        // Header row.
         builder.Append("ReplicateIndex,Seed,FinalTick,Susceptible,Infected,Recovered,TotalPopulation");
         foreach (var key in metricKeys)
         {
@@ -30,6 +46,7 @@ public static class MonteCarloCsvExporter
         }
         builder.AppendLine();
 
+        // One row per run.
         foreach (var result in results)
         {
             var stats = result.FinalStatistics;
