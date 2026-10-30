@@ -75,7 +75,7 @@ dotnet run --project AbmFramework.Dashboard
 Then open the address shown in the terminal (for example `http://localhost:59488`).
 
 **Run the tests**
-- Visual Studio: **Test → Run All Tests**
+- Visual Studio: **Test > Run All Tests**
 - Command line: `dotnet test`
 
 ## Using the dashboard
@@ -123,3 +123,20 @@ Each run in a Compare batch is saved as its own Simulation with all of its ticks
 - **Wolf-Sheep** on the default small grid usually ends with the wolves wiping out the sheep. Pick the **Stable populations** preset (50×50 grid, 150 sheep, 25 wolves) to see both populations rise and fall in waves. With those settings both survived 500 ticks in all 30 seeds we tested.
 - Every slider has a number box next to it for typing an exact value. Percentages are typed as whole numbers (5 means 5%). Agent sliders only go up to the number of cells on the grid.
 - Grid width and height can be from 5 to 200.
+
+## About
+
+Built in 2026 by Dinos Group 1 for PRJ381 at Belgium Campus iTversity.
+
+**Supervisors:** Mr. Dino Giovannoni and Mr. Simba Zengeni
+
+**Team:**
+- Clarissa Bierman
+- Thato Goqo
+- Cornelius Greeff
+- Eduard Herman
+- Lethabo Maine
+- Marco Rentroia
+- Coenraad Vermaak
+
+Next year's group: see [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) for where we'd start.
