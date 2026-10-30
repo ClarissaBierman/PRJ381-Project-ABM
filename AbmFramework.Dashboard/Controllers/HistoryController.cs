@@ -1,3 +1,29 @@
+// =============================================================================
+// HistoryController.cs  (AbmFramework.Dashboard.Controllers)
+//
+// The REST API behind the Past runs window (wwwroot/js/history.js):
+//
+//   Live runs
+//     GET    /api/history/info                       is saving on, and where is the database
+//     GET    /api/history/runs?model=SIR             list of saved live runs
+//     GET    /api/history/runs/{id}                  one run with every tick (the View button)
+//     GET    /api/history/runs/{id}/ticks.csv        download as CSV
+//     GET    /api/history/runs/{id}/ticks.xlsx       download as Excel
+//     GET    /api/history/runs/{id}/export.json      download everything as JSON
+//     DELETE /api/history/runs/{id}                  delete a run
+//   Comparisons
+//     GET    /api/history/compares?model=SIR         list of saved comparisons
+//     GET    /api/history/compares/{groupId}         one comparison (A and B)
+//     GET    /api/history/compares/{groupId}/export.json
+//     DELETE /api/history/compares/{groupId}
+//
+// Continue is NOT here: it goes through SimulationHub.ContinueSimulation,
+// because it starts a live run.
+//
+// Before reading, most endpoints wait for queued writes to finish (FlushHistoryAsync
+// / WhenIdleAsync), so you never see a run with half its ticks missing.
+// =============================================================================
+
 using System.Text;
 using System.Text.Json.Nodes;
 using ABM.Persistence;
@@ -9,7 +35,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace AbmFramework.Dashboard.Controllers;
 
-// Past runs: saved live runs and Compare batches, read back from the database.
+/// <summary>Past runs: saved live runs and Compare batches, read back from the database.</summary>
 [ApiController]
 [Route("api/history")]
 public class HistoryController : ControllerBase
@@ -17,6 +43,7 @@ public class HistoryController : ControllerBase
     private readonly HistoryWriter _history;
     private readonly LiveSimulationService _simulation;
 
+    /// <summary>ASP.NET Core passes in the database writer and the live simulation.</summary>
     public HistoryController(HistoryWriter history, LiveSimulationService simulation)
     {
         _history = history;
@@ -25,10 +52,13 @@ public class HistoryController : ControllerBase
 
     private IRepository Repository => _history.Repository!;
 
+    // Returns a "503 Service Unavailable" with the reason if saving is off,
+    // otherwise null. Every endpoint checks this first.
     private IActionResult? Unavailable() => _history.Enabled
         ? null
         : StatusCode(StatusCodes.Status503ServiceUnavailable, _history.Problem ?? "Saving is turned off.");
 
+    /// <summary>Whether saving is on, where the database is, and why saving is off if it is.</summary>
     [HttpGet("info")]
     public IActionResult Info() => Ok(new
     {
@@ -39,6 +69,10 @@ public class HistoryController : ControllerBase
 
     // ---------------------------------------------------------------- runs
 
+    /// <summary>
+    /// The saved live runs, newest first, with whether each one can be
+    /// continued and why not. Compare and console runs are not listed here.
+    /// </summary>
     [HttpGet("runs")]
     public async Task<IActionResult> ListRuns([FromQuery] string? model = null)
     {
@@ -77,6 +111,7 @@ public class HistoryController : ControllerBase
         }));
     }
 
+    /// <summary>One saved run with every tick, for the View button's chart.</summary>
     [HttpGet("runs/{id:guid}")]
     public async Task<IActionResult> GetRun(Guid id)
     {
@@ -120,6 +155,7 @@ public class HistoryController : ControllerBase
         });
     }
 
+    /// <summary>Downloads a saved run's ticks as CSV.</summary>
     [HttpGet("runs/{id:guid}/ticks.csv")]
     public async Task<IActionResult> DownloadRunCsv(Guid id)
     {
@@ -135,6 +171,7 @@ public class HistoryController : ControllerBase
         return File(Encoding.UTF8.GetBytes(writer.ToString()), "text/csv", FileName(simulation, "csv"));
     }
 
+    /// <summary>Downloads a saved run's ticks as Excel.</summary>
     [HttpGet("runs/{id:guid}/ticks.xlsx")]
     public async Task<IActionResult> DownloadRunExcel(Guid id)
     {
@@ -149,6 +186,7 @@ public class HistoryController : ControllerBase
         return File(bytes, ExcelExporter.ContentType, FileName(simulation, "xlsx"));
     }
 
+    /// <summary>Downloads everything saved for a run (ticks, agents, states, patches) as JSON.</summary>
     [HttpGet("runs/{id:guid}/export.json")]
     public async Task<IActionResult> DownloadRunJson(Guid id)
     {
@@ -171,6 +209,7 @@ public class HistoryController : ControllerBase
         return File(Encoding.UTF8.GetBytes(JsonExporter.Write(json)), "application/json", FileName(simulation, "json"));
     }
 
+    /// <summary>Deletes a saved run. The run on screen can't be deleted.</summary>
     [HttpDelete("runs/{id:guid}")]
     public async Task<IActionResult> DeleteRun(Guid id)
     {
@@ -185,6 +224,7 @@ public class HistoryController : ControllerBase
 
     // ------------------------------------------------------------- compares
 
+    /// <summary>The saved comparisons (A and B batches grouped together), newest first.</summary>
     [HttpGet("compares")]
     public async Task<IActionResult> ListCompares([FromQuery] string? model = null)
     {
@@ -218,6 +258,7 @@ public class HistoryController : ControllerBase
         return Ok(groups);
     }
 
+    /// <summary>One saved comparison, with its summaries and settings, to show it again.</summary>
     [HttpGet("compares/{groupId:guid}")]
     public async Task<IActionResult> GetCompare(Guid groupId)
     {
@@ -242,6 +283,7 @@ public class HistoryController : ControllerBase
         });
     }
 
+    /// <summary>Downloads a whole comparison, including every run's ticks, as JSON.</summary>
     [HttpGet("compares/{groupId:guid}/export.json")]
     public async Task<IActionResult> DownloadCompareJson(Guid groupId)
     {
@@ -267,6 +309,7 @@ public class HistoryController : ControllerBase
         return File(Encoding.UTF8.GetBytes(JsonExporter.Write(json)), "application/json", name);
     }
 
+    /// <summary>Deletes a comparison (both batches and all their runs).</summary>
     [HttpDelete("compares/{groupId:guid}")]
     public async Task<IActionResult> DeleteCompare(Guid groupId)
     {
@@ -278,9 +321,11 @@ public class HistoryController : ControllerBase
             : NotFound("That comparison is not in the database any more.");
     }
 
+    // "WolfSheep" -> "Wolf-Sheep Predation".
     private static string DisplayName(string model) =>
         Enum.TryParse<ModelType>(model, out var parsed) ? ModelCatalog.DisplayName(parsed) : model;
 
+    // e.g. "WolfSheep-20261030-141500.csv" (start time in local time).
     private static string FileName(Simulation simulation, string extension) =>
         $"{simulation.Model}-{simulation.StartedAt.ToLocalTime():yyyyMMdd-HHmmss}.{extension}";
 }

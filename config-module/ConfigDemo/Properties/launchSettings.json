@@ -2,7 +2,8 @@
   "profiles": {
     "ConfigDemo": {
       "commandName": "Project",
-      "commandLineArgs": "--config \"C:\\Users\\User\\OneDrive - belgiumcampus.ac.za\\Documents\\Belgium\\Third Year 2026\\PRJ381\\PRJ381-Project-ABM\\config-module\\configs\\sir-default.json\""
+      "commandLineArgs": "--config ../configs/sir-default.json",
+      "workingDirectory": "$(ProjectDir)"
     }
   }
 }

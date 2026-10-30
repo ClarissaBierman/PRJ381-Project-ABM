@@ -1,11 +1,34 @@
+// =============================================================================
+// grid.js  (dashboard page)
+//
+// Draws the simulation grid on the <canvas id="grid"> and keeps the legend
+// under it up to date. Loaded by index.html before its own script, so every
+// function and variable here is global and used from index.html.
+//
+// Main entry points (called from index.html):
+//   setGridSize(w, h)   new run: resize the canvas and clear it
+//   drawGrid(grid)      draw one "ReceiveGrid" message (agents + patches)
+//   redrawGrid()        draw the last grid again (after a display switch)
+//   fitGridTo(px)       the panel was resized
+//   setSelection(ids)   highlight agents picked in the Agent inspector
+//   cellFromEvent(e) / agentsAtCell(x, y)   turn a mouse click into agents
+//
+// How a frame is drawn: clear -> patches (grass, pheromone, food, nest)
+// -> grid lines -> agents (icons) -> energy labels -> selection rings.
+//
+// ADD A MODEL: give each of its DisplayState values an entry in stateStyles
+// (colour, legend label and icon). Unknown states still work, they get a
+// colour from fallbackPalette and are drawn as dots.
+// =============================================================================
+
 const canvas = document.getElementById("grid");
 const ctx = canvas.getContext("2d");
 const legend = document.getElementById("legend");
 
-let targetSize = 480;
-let gridWidth = 20;
-let gridHeight = 20;
-let cellSize = targetSize / 20;
+let targetSize = 480;               // how big the grid should be on screen, in CSS pixels
+let gridWidth = 20;                // number of columns in the current run
+let gridHeight = 20;               // number of rows
+let cellSize = targetSize / 20;    // size of one cell in CSS pixels
 
 // The canvas is drawn at the screen's real pixel density (devicePixelRatio), so the
 // grid and icons stay sharp on high-DPI and scaled Windows displays.
@@ -20,6 +43,8 @@ function sizeCanvas() {
     ctx.imageSmoothingQuality = "high";
 }
 
+// How each agent state (the agent's DisplayState from the server) is drawn:
+// colour, legend text, icon shape (see iconShapes) and optional scale.
 const stateStyles = {
     "Susceptible": { color: "#3366cc", label: "Susceptible", icon: "person" },
     "Infected": { color: "#dc3545", label: "Infected", icon: "person" },
@@ -52,18 +77,20 @@ const displayOptions = {
     showEnergy: false
 };
 
-// Cells smaller than this are too small to fit a readable energy label.
+// Cells smaller than this (in pixels) are too small to fit a readable energy label.
 const minLabelCellSize = 9;
 
+// Colours handed out to agent states that have no entry in stateStyles.
 const fallbackPalette = ["#ffc107", "#9b59b6", "#17a2b8", "#e67e22", "#6c757d"];
 let fallbackIndex = 0;
-let seenStates = [];
-let lastAgents = [];
-let lastGrid = null;
-let foodReference = 1;
-let selectedAgentId = null;
-let selectedAgentIds = [];
+let seenStates = [];           // states and patch layers drawn so far, in order (for the legend)
+let lastAgents = [];           // the agents of the last drawn frame (for clicks and the inspector)
+let lastGrid = null;           // the last ReceiveGrid message, so the frame can be redrawn
+let foodReference = 1;         // biggest food pile seen this run, so piles fade as they shrink
+let selectedAgentId = null;    // the first selected agent, or null
+let selectedAgentIds = [];     // every selected agent (Ctrl+click adds more)
 const MAX_SELECTED = 6;
+// Ring colour for each selected agent, in selection order.
 const selectionColors = ["#ff1744", "#2979ff", "#00c853", "#ff9100", "#d500f9", "#00b8d4"];
 
 // Agent shapes, like NetLogo's turtle shapes. Each is an SVG on a 32x32 canvas
@@ -112,6 +139,7 @@ const iconShapes = {
         <circle cx="27" cy="11" r="0.9" fill="#f1c40f"/>`
 };
 
+// Shared shape for the Schelling faces: a coloured circle with eyes and a mouth.
 function face(c, mouth) {
     return `
         <circle cx="16" cy="16" r="14" fill="${c}" stroke="white" stroke-width="1.5"/>
@@ -119,6 +147,7 @@ function face(c, mouth) {
         <path d="${mouth}" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/>`;
 }
 
+// Shared ant shape (body, head, six legs), with "extra" drawn on top (the food it carries).
 function ant(c, extra) {
     return `
         <path d="M14 15 L10 7 M14 17 L10 25 M17 15 L17 6 M17 17 L17 26 M19 15 L23 8 M19 17 L23 24" stroke="${c}" stroke-width="1.6" stroke-linecap="round"/>
@@ -128,9 +157,12 @@ function ant(c, extra) {
         ${extra}`;
 }
 
+// Loaded icon images, one per shape + colour, so each SVG is only built once.
 const iconCache = {};
 
 // Returns a loaded image for the style's shape, or null while it's still loading.
+// The SVG is turned into an image via a "data:" URL. When it finishes loading
+// the grid and legend are redrawn, so icons appear as soon as they are ready.
 function iconFor(style) {
     if (!style.icon || !(style.icon in iconShapes)) return null;
 
@@ -150,6 +182,8 @@ function iconFor(style) {
     return img.complete && img.naturalWidth > 0 ? img : null;
 }
 
+// The style for an agent state or patch layer. A state never seen before gets
+// the next fallback colour and is remembered, so it stays the same colour.
 function styleFor(state) {
     if (state in patchStyles) return patchStyles[state];
     if (!(state in stateStyles)) {
@@ -159,6 +193,7 @@ function styleFor(state) {
     return stateStyles[state];
 }
 
+// Called when a new run starts: works out the cell size and clears the canvas.
 function setGridSize(width, height) {
     gridWidth = width;
     gridHeight = height;
@@ -171,6 +206,9 @@ function setGridSize(width, height) {
 const turnsToFace = new Set(["ant", "antWithFood"]);
 let facing = {};
 
+// Works out which way an ant is facing (in radians) from its last position.
+// The dx/dy correction handles an ant wrapping around the grid edge, which
+// would otherwise look like a big jump the other way.
 function facingFor(a) {
     const last = facing[a.id];
     let angle = last ? last.angle : 0;
@@ -185,6 +223,8 @@ function facingFor(a) {
     return angle;
 }
 
+// Called when the grid panel changes size: recalculates the cell size and redraws.
+// Never smaller than 160 px or 2 px per cell.
 function fitGridTo(size) {
     const next = Math.max(160, Math.floor(size));
     if (next === targetSize) return;
@@ -199,6 +239,7 @@ function fitGridTo(size) {
     }
 }
 
+// Empties the canvas, the legend and all remembered state (between runs).
 function clearGrid() {
     seenStates = [];
     lastAgents = [];
@@ -229,6 +270,7 @@ function drawGridLines() {
     ctx.stroke();
 }
 
+// Fills one cell with a colour, optionally see-through (alpha 0 to 1).
 function fillCell(x, y, color, alpha = 1) {
     ctx.globalAlpha = alpha;
     ctx.fillStyle = color;
@@ -236,6 +278,7 @@ function fillCell(x, y, color, alpha = 1) {
     ctx.globalAlpha = 1;
 }
 
+// Draws the coloured cells: grass, pheromone, eaten grass, food and nests.
 // Returns the patch layers actually drawn this frame, for the legend.
 function drawPatches(grid) {
     const drawn = new Set();
@@ -293,6 +336,7 @@ function drawPatches(grid) {
     return drawn;
 }
 
+// Draws the anthill icon over the nest cell (or a plain cell while the icon loads).
 function drawNest(p) {
     const img = iconFor(patchStyles.Nest);
     if (!img) {
@@ -303,6 +347,8 @@ function drawNest(p) {
     ctx.drawImage(img, p.x * cellSize + cellSize / 2 - size / 2, p.y * cellSize + cellSize / 2 - size * 0.6, size, size);
 }
 
+// Draws one agent: its icon (rotated for boids and ants), or a dot while
+// the icon is still loading.
 function drawAgent(a, style) {
     const cx = a.x * cellSize + cellSize / 2;
     const cy = a.y * cellSize + cellSize / 2;
@@ -355,6 +401,7 @@ function spriteFor(img, size) {
     return sprite;
 }
 
+// Draws a coloured ring around every selected agent.
 function drawSelection() {
     selectedAgentIds.forEach((id, i) => {
         const a = lastAgents.find(agent => agent.id === id);
@@ -362,10 +409,13 @@ function drawSelection() {
     });
 }
 
+// The ring colour for the n-th selected agent (also used by the inspector cards).
 function selectionColor(index) {
     return selectionColors[index % selectionColors.length];
 }
 
+// A ring around one agent: a white outline first, then the colour, so it
+// shows up on any background.
 function drawRing(a, color) {
     const cx = a.x * cellSize + cellSize / 2;
     const cy = a.y * cellSize + cellSize / 2;
@@ -386,6 +436,7 @@ function drawRing(a, color) {
     ctx.lineWidth = 1;
 }
 
+// Writes each sheep's and wolf's energy above it when "Show energy" is on.
 function drawEnergyLabels(agents) {
     if (!displayOptions.showEnergy || cellSize < minLabelCellSize) return;
 
@@ -409,7 +460,10 @@ function drawEnergyLabels(agents) {
     ctx.lineWidth = 1;
 }
 
+// Draws one complete frame.
 // grid = { agents, patches, hasGrass } as sent by the server's ReceiveGrid.
+// Calls onGridDrawn(agents) afterwards if index.html defines it (it updates
+// the Agent inspector).
 function drawGrid(grid) {
     lastGrid = grid;
     lastAgents = grid.agents || [];
@@ -462,11 +516,8 @@ function redrawGrid() {
     renderLegend();
 }
 
-// Kept for older callers that pass agents and patches separately.
-function drawAgents(agents, patches = []) {
-    drawGrid({ agents, patches, hasGrass: false });
-}
-
+// Rebuilds the legend under the grid from seenStates: icons for agents and
+// the nest, square swatches for the other patch colours.
 function renderLegend() {
     legend.innerHTML = seenStates
         .map(state => {
@@ -495,10 +546,12 @@ function cellFromEvent(event) {
     return { x: Math.floor(x / cellSize), y: Math.floor(y / cellSize) };
 }
 
+// Every agent drawn on cell (x, y) in the last frame.
 function agentsAtCell(x, y) {
     return lastAgents.filter(a => a.x === x && a.y === y);
 }
 
+// Sets which agents are selected (at most MAX_SELECTED) and redraws.
 function setSelection(ids) {
     selectedAgentIds = [...new Set(ids)].slice(0, MAX_SELECTED);
     selectedAgentId = selectedAgentIds.length ? selectedAgentIds[0] : null;
@@ -506,13 +559,10 @@ function setSelection(ids) {
     if (!lastGrid && typeof onGridDrawn === "function") onGridDrawn(lastAgents);
 }
 
+// Selects a single agent, or clears the selection with null.
 function selectAgent(id) {
     setSelection(id === null ? [] : [id]);
 }
 
-function selectedAgent() {
-    if (selectedAgentId === null) return null;
-    return lastAgents.find(a => a.id === selectedAgentId) || null;
-}
-
+// Draw an empty 20 x 20 grid as soon as the page loads.
 setGridSize(gridWidth, gridHeight);

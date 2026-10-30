@@ -1,7 +1,21 @@
+// =============================================================================
+// AntAgentTests.cs  (ABM.Core.Tests)
+//
+// Unit tests for AntAgent: picking up food, carrying it home, laying pheromone,
+// and how scent steers the search. Uses FixedRandom to force each random choice.
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using Xunit;
 
 namespace ABM.Core.Tests;
 
+/// <summary>Tests for the ant foraging agent.</summary>
 public class AntAgentTests
 {
     private static int Chebyshev((int X, int Y) a, (int X, int Y) b) =>

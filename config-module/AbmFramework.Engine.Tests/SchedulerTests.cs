@@ -1,9 +1,23 @@
+// =============================================================================
+// SchedulerTests.cs  (AbmFramework.Engine.Tests)
+//
+// Unit tests for the two schedulers (Sequential keeps the order, Random
+// shuffles it repeatably with the same seed).
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using ABM.Core;
 using AbmFramework.Engine.Scheduler;
 using Xunit;
 
 namespace AbmFramework.Engine.Tests;
 
+/// <summary>Tests for agent ordering.</summary>
 public class SchedulerTests
 {
     private static List<Agent> Agents(int count) =>

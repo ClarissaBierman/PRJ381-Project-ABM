@@ -1,3 +1,16 @@
+// =============================================================================
+// SimulationEngineTests.cs  (AbmFramework.Engine.Tests)
+//
+// Model-independent tests of the engine: the tick loop, events, determinism
+// (same seed = same run) and the Start/Pause/Resume/Reset lifecycle.
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using AbmFramework.Config;
 using Xunit;
 

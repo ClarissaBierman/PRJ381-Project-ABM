@@ -1,7 +1,21 @@
+// =============================================================================
+// BoidAgentTests.cs  (ABM.Core.Tests)
+//
+// Unit tests for BoidAgent: starting heading, the three flocking rules, speed
+// limit and edge handling (wrap or bounce).
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using Xunit;
 
 namespace ABM.Core.Tests;
 
+/// <summary>Tests for the Boids flocking agent.</summary>
 public class BoidAgentTests
 {
     private const int Size = 20;

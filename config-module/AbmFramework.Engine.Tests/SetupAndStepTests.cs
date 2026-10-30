@@ -1,8 +1,22 @@
+// =============================================================================
+// SetupAndStepTests.cs  (AbmFramework.Engine.Tests)
+//
+// Tests for the dashboard's Setup (start paused at tick 0) and Step (exactly
+// one tick while paused) behaviour of the engine.
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using AbmFramework.Config;
 using Xunit;
 
 namespace AbmFramework.Engine.Tests;
 
+/// <summary>Tests for Setup and Step.</summary>
 public class SetupAndStepTests
 {
     private static async Task WaitFor(Func<bool> condition, int timeoutMs = 3000)

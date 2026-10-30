@@ -1,3 +1,23 @@
+// =============================================================================
+// ComparisonService.cs  (AbmFramework.Dashboard.Comparison)
+//
+// Runs a batch for the Compare panel:
+//   1. BuildConfig: start from the model's defaults (ModelCatalog), apply the
+//      user's settings by property name, check limits and validate.
+//   2. RunAsync: run it with MonteCarloRunner on a background thread (no
+//      animation, no tick delay), build the ComparisonSummary, queue it for
+//      saving and return it to the page.
+//
+// Limits (constants below) keep a demo laptop responsive: at most 100 runs,
+// grids of 10 to 100, 5 000 ticks, a total work budget (MaxWork), and at most
+// two batches running at the same time.
+//
+// Settings are applied with reflection (SettableProperties): the page sends
+// {"infectionProbability": 0.06} and the matching SimulationConfig property is
+// set. That is why a new slider on the page needs no server change, as long as
+// its key matches a SimulationConfig property name.
+// =============================================================================
+
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
@@ -8,21 +28,34 @@ using AbmFramework.Engine;
 
 namespace AbmFramework.Dashboard.Comparison;
 
-// Runs a batch of simulations for the Compare button: builds the config from
-// the model's defaults plus the user's settings, validates it, runs it with
-// MonteCarloRunner (no animation, no tick delay) and summarises the result.
+/// <summary>
+/// Runs a batch of simulations for the Compare button: builds the config from
+/// the model's defaults plus the user's settings, validates it, runs it with
+/// MonteCarloRunner (no animation, no tick delay) and summarises the result.
+/// </summary>
 public class ComparisonService
 {
+    /// <summary>Fewest runs allowed in a batch.</summary>
     public const int MinRuns = 2;
+
+    /// <summary>Most runs allowed in a batch.</summary>
     public const int MaxRuns = 100;
+
+    /// <summary>Smallest grid width/height allowed in Compare.</summary>
     public const int MinGridSize = 10;
+
+    /// <summary>Biggest grid width/height allowed in Compare.</summary>
     public const int MaxGridSize = 100;
+
+    /// <summary>Longest run length allowed in Compare.</summary>
     public const int MaxTickLimit = 5000;
 
-    // Rough ceiling on runs x ticks x agents. The engine manages roughly
-    // 300,000 to 500,000 agent-steps per second, so this keeps the worst
-    // case to about a minute. Anything bigger is refused up front with a
-    // message rather than left to tie up the server during the Expo demo.
+    /// <summary>
+    /// Rough ceiling on runs x ticks x agents. The engine manages roughly
+    /// 300,000 to 500,000 agent-steps per second, so this keeps the worst
+    /// case to about a minute. Anything bigger is refused up front with a
+    /// message rather than left to tie up the server during a demo.
+    /// </summary>
     public const long MaxWork = 25_000_000;
 
     // Settings the user may not change through Compare: the model and seed
@@ -34,6 +67,7 @@ public class ComparisonService
         nameof(SimulationConfig.ScenarioName)
     };
 
+    // Every SimulationConfig property the page may set, by name (any case).
     private static readonly Dictionary<string, PropertyInfo> SettableProperties = typeof(SimulationConfig)
         .GetProperties(BindingFlags.Public | BindingFlags.Instance)
         .Where(p => p.CanWrite && !LockedSettings.Contains(p.Name))
@@ -42,19 +76,21 @@ public class ComparisonService
     // Two comparisons at once is plenty for a demo laptop; more wait their turn.
     private readonly SemaphoreSlim _slots = new(2, 2);
 
+    // The running comparison of each page connection, so it can be cancelled.
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _running = new();
 
     private readonly HistoryWriter _history;
 
+    /// <summary>Created once by ASP.NET Core.</summary>
     public ComparisonService(HistoryWriter history)
     {
         _history = history;
     }
 
-    // The model's default settings, used to fill in the Compare panel.
+    /// <summary>The model's default settings, used to fill in the Compare panel.</summary>
     public SimulationConfig GetDefaults(string model) => ModelCatalog.BuildConfig(ParseModel(model));
 
-    // Marks a connection as running a comparison; null if it already is.
+    /// <summary>Marks a connection as running a comparison. Returns null if it already is.</summary>
     public CancellationTokenSource? TryBegin(string connectionId)
     {
         var cts = new CancellationTokenSource();
@@ -64,11 +100,13 @@ public class ComparisonService
         return null;
     }
 
+    /// <summary>Marks a connection's comparison as finished.</summary>
     public void End(string connectionId)
     {
         if (_running.TryRemove(connectionId, out var cts)) cts.Dispose();
     }
 
+    /// <summary>Cancels a connection's running comparison, if it has one.</summary>
     public void Cancel(string connectionId)
     {
         if (_running.TryGetValue(connectionId, out var cts))
@@ -77,6 +115,12 @@ public class ComparisonService
         }
     }
 
+    /// <summary>Runs the batch, saves it in the background and returns the summary.</summary>
+    /// <param name="request">What to run.</param>
+    /// <param name="progress">Told how many runs have finished after each one.</param>
+    /// <param name="cancellationToken">Cancelled by the Cancel button or by closing the page.</param>
+    /// <exception cref="ComparisonRequestException">The request has a problem the user can fix.</exception>
+    /// <exception cref="OperationCanceledException">The batch was cancelled.</exception>
     public async Task<ComparisonSummary> RunAsync(
         ComparisonRequest request,
         IProgress<int> progress,
@@ -85,6 +129,7 @@ public class ComparisonService
         var (model, config) = BuildConfig(request);
         int baseSeed = request.Seed ?? Random.Shared.Next();
 
+        // Wait for a free slot (at most two batches at once).
         await _slots.WaitAsync(cancellationToken);
         try
         {
@@ -103,9 +148,11 @@ public class ComparisonService
         }
     }
 
-    // Starts from the model's defaults, applies the user's settings and
-    // checks the result. Anything the user can fix throws a
-    // ComparisonRequestException with a readable message.
+    /// <summary>
+    /// Starts from the model's defaults, applies the user's settings and
+    /// checks the result. Anything the user can fix throws a
+    /// ComparisonRequestException with a readable message.
+    /// </summary>
     public static (ModelType Model, SimulationConfig Config) BuildConfig(ComparisonRequest request)
     {
         var model = ParseModel(request.Model);
@@ -167,6 +214,8 @@ public class ComparisonService
             throw new ComparisonRequestException(string.Join(" ", ex.Errors));
         }
 
+        // Refuse batches that would take too long (see MaxWork), and tell the
+        // user how many runs would fit instead.
         long agents = model == ModelType.WolfSheep ? config.InitialSheep + config.InitialWolves : config.AgentCount;
         long workPerRun = Math.Max(1, (long)config.TickLimit * agents);
         if (request.Runs * workPerRun > MaxWork)
@@ -180,7 +229,9 @@ public class ComparisonService
         return (model, config);
     }
 
-    // Queued for the background writer, so the page gets its results straight away.
+    // Saves the batch and every run in it. Queued for the background writer,
+    // so the page gets its results straight away. Each run is saved with its
+    // own seed, so any single run can be replayed later.
     private void Save(
         ComparisonRequest request,
         SimulationConfig config,
@@ -246,6 +297,7 @@ public class ComparisonService
         _history.Enqueue(repository => repository.SaveBatchAsync(batch, runs));
     }
 
+    // "sir" or "SIR" -> ModelType.SIR, or a readable error.
     private static ModelType ParseModel(string model)
     {
         if (!Enum.TryParse<ModelType>(model, ignoreCase: true, out var parsed))
@@ -278,15 +330,19 @@ public class ComparisonService
     }
 }
 
-// IProgress<T> that runs the callback straight away on the reporting thread.
-// The built-in Progress<T> posts to a SynchronizationContext, which can
-// reorder updates; the page already ignores out-of-order counts, but there
-// is no reason to introduce the delay.
+/// <summary>
+/// IProgress&lt;T&gt; that runs the callback straight away on the reporting thread.
+/// The built-in Progress&lt;T&gt; posts to a SynchronizationContext, which can
+/// reorder updates. The page already ignores out-of-order counts, but there
+/// is no reason to introduce the delay.
+/// </summary>
 public sealed class CallbackProgress<T> : IProgress<T>
 {
     private readonly Action<T> _callback;
 
+    /// <summary>Wraps the function to call with every progress value.</summary>
     public CallbackProgress(Action<T> callback) => _callback = callback;
 
+    /// <summary>Calls the callback with the value, on the current thread.</summary>
     public void Report(T value) => _callback(value);
 }

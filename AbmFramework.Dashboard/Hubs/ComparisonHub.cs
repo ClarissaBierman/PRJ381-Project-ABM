@@ -1,3 +1,11 @@
+// =============================================================================
+// ComparisonHub.cs  (AbmFramework.Dashboard.Hubs)
+//
+// The SignalR hub for the Compare panel (Monte Carlo batches). The page calls
+// RunComparison once per setting (A, then B), and gets "ComparisonProgress"
+// messages while it runs so the progress bar can move.
+// =============================================================================
+
 using AbmFramework.Config;
 using AbmFramework.Dashboard.Comparison;
 using AbmFramework.Dashboard.Models;
@@ -9,6 +17,7 @@ namespace AbmFramework.Dashboard.Hubs;
 // Separate from SimulationHub on purpose: Compare runs in the background
 // without the live animation, so it neither touches the live run nor needs
 // changes to the shared hub.
+/// <summary>The Compare panel's connection to the server.</summary>
 public class ComparisonHub : Hub
 {
     private readonly ComparisonService _comparison;
@@ -18,10 +27,10 @@ public class ComparisonHub : Hub
         _comparison = comparison;
     }
 
-    // The models the Compare panel can offer.
+    /// <summary>The models the Compare panel can offer.</summary>
     public IReadOnlyList<ModelOption> GetModels() => ModelCatalog.Options;
 
-    // The model's default settings, to fill in the Compare panel.
+    /// <summary>The model's default settings, to fill in the Compare panel.</summary>
     public SimulationConfig GetDefaults(string model)
     {
         try
@@ -34,8 +43,11 @@ public class ComparisonHub : Hub
         }
     }
 
-    // Runs the batch and returns the summary. Sends "ComparisonProgress"
-    // to the caller after every finished run.
+    /// <summary>
+    /// Runs the batch and returns the summary. Sends "ComparisonProgress"
+    /// to the caller after every finished run. Only one comparison per page
+    /// connection can run at a time.
+    /// </summary>
     public async Task<ComparisonSummary> RunComparison(ComparisonRequest request)
     {
         var connectionId = Context.ConnectionId;
@@ -49,6 +61,8 @@ public class ComparisonHub : Hub
             // Link the page's cancel button / disconnect with the request.
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, Context.ConnectionAborted);
 
+            // "_ =" fires the message without waiting for it, so progress
+            // reporting never slows the batch down.
             void Report(int completed) => _ = caller.SendAsync("ComparisonProgress", new ComparisonProgress
             {
                 Label = request.Label,
@@ -76,8 +90,10 @@ public class ComparisonHub : Hub
         }
     }
 
+    /// <summary>The Cancel button: stops this page's running comparison.</summary>
     public void CancelComparison() => _comparison.Cancel(Context.ConnectionId);
 
+    /// <summary>If the page is closed mid-comparison, stop the batch so it doesn't run for nobody.</summary>
     public override Task OnDisconnectedAsync(Exception? exception)
     {
         _comparison.Cancel(Context.ConnectionId);

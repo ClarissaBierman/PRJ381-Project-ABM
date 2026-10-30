@@ -1,40 +1,66 @@
-// Past runs: lists the live runs and comparisons saved in the database, and
-// lets you look at a run's chart again, reopen a comparison, download CSV or
-// JSON, or delete one. Uses the Compare panel's styles (.cmp) so both look
-// the same in light and dark mode.
+// =============================================================================
+// history.js  (dashboard page)
+//
+// The "Past runs" window: lists the live runs and comparisons saved in the
+// database, and lets you look at a run's chart again, continue a run, reopen
+// a comparison, download Excel, CSV or JSON, or delete one. Uses the Compare
+// panel's styles (.cmp) so both look the same in light and dark mode.
+//
+// It talks to the server over plain HTTP (fetch) using the /api/history
+// endpoints in Controllers/HistoryController.cs.
+//
+// The whole file is wrapped in (function () { ... })() so its variables stay
+// private and don't clash with index.html's globals. It builds its own HTML
+// when the page loads and hooks up the "Past runs" button (#historyButton).
+//
+// Things it borrows from index.html if they exist: monitorLabel and
+// metricColor (names and colours for chart lines), parameterDefinitions (to
+// list a run's settings) and continueSavedRun (the Continue button).
+// From compare.js: window.abmCompare.showSaved (to reopen a comparison).
+// =============================================================================
+
 (function () {
     "use strict";
 
+    // Everything this window remembers between clicks.
     const state = {
-        tab: "runs",
-        model: "",
-        chart: null,
-        info: null,
-        runs: {}
+        tab: "runs",      // "runs" or "compares"
+        model: "",        // model filter ("" = all models)
+        chart: null,      // the Chart.js chart in the detail view, if one is open
+        info: null,       // /api/history/info: is saving on, where is the database
+        runs: {}          // the listed runs by id, for the Continue buttons
     };
 
+    // Handy references to the window's elements, filled in by build().
     let el = {};
 
+    // Escapes text before putting it into HTML, so a name like "<b>" can't
+    // break the page (or inject anything).
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
         ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+    // A date as "30 Oct 2026, 14:15" in the user's own format.
     function when(iso) {
         return new Date(iso).toLocaleString(undefined, {
             day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
         });
     }
 
+    // A readable name for a chart line: "HappyAgents" -> "Happy Agents".
     function label(key) {
         if (typeof monitorLabel === "function") return monitorLabel(key);
         return key.replace(/([a-z])([A-Z])/g, "$1 $2");
     }
 
+    // The line colour: the same colour the dashboard uses, or one from a palette.
     function colour(key, i) {
         const fromPage = typeof metricColor === "function" ? metricColor(key) : null;
         const palette = ["#2e6be6", "#e8590c", "#2f9e5b", "#9c36b5", "#c92a2a", "#0b7285"];
         return fromPage || palette[i % palette.length];
     }
 
+    // fetch() + error handling: throws an Error with the server's message
+    // (shown in the red box) if the request failed. 204 (No Content) -> null.
     async function getJson(url, options) {
         const response = await fetch(url, options);
         if (!response.ok) {
@@ -44,6 +70,7 @@
         return response.status === 204 ? null : response.json();
     }
 
+    // Starts a file download by clicking a temporary <a download> link.
     function download(url) {
         const a = document.createElement("a");
         a.href = url;
@@ -55,6 +82,7 @@
 
     // ------------------------------------------------------------------ build
 
+    // Creates the window's HTML (hidden until opened) and its event handlers.
     function build() {
         const overlay = document.createElement("div");
         overlay.className = "cmp cmp-overlay hist";
@@ -119,6 +147,7 @@
         el.list.addEventListener("click", onListClick);
     }
 
+    // Hooks up the dashboard's "Past runs" button.
     function addButton() {
         const button = document.getElementById("historyButton");
         if (button) button.addEventListener("click", open);
@@ -126,6 +155,7 @@
 
     // ------------------------------------------------------------ open/close
 
+    // Shows the window and loads the list.
     async function open() {
         el.overlay.classList.add("open");
         document.body.style.overflow = "hidden";
@@ -139,12 +169,14 @@
         await loadList();
     }
 
+    // Hides the window.
     function close() {
         el.overlay.classList.remove("open");
         document.body.style.overflow = "";
         destroyChart();
     }
 
+    // Copies the dashboard's model list into the filter drop-down.
     function fillModels() {
         const source = document.getElementById("modelSelect");
         const options = source ? [...source.options].map((o) => `<option value="${esc(o.value)}">${esc(o.textContent)}</option>`) : [];
@@ -154,6 +186,7 @@
 
     // ------------------------------------------------------------------ lists
 
+    // Loads and shows the list for the current tab and model filter.
     async function loadList() {
         hideError();
         hideDetail();
@@ -168,11 +201,14 @@
         }
     }
 
+    // Builds the buttons cell of a table row. Each button is
+    // [action name, text, extra HTML attributes].
     function actions(buttons) {
         return `<td class="hist-actions">${buttons.map(([act, text, extra]) =>
             `<button type="button" data-act="${act}"${extra || ""}>${text}</button>`).join("")}</td>`;
     }
 
+    // Shows the Live runs table.
     function renderRuns(runs) {
         state.runs = Object.fromEntries(runs.map((r) => [r.id, r]));
         if (runs.length === 0) {
@@ -202,6 +238,7 @@
             </table></div>`;
     }
 
+    // Shows the Compares table (A and B of one comparison are one row).
     function renderCompares(groups) {
         if (groups.length === 0) {
             el.list.innerHTML = `<p class="hist-empty">No saved comparisons yet. Every comparison you run with Compare is saved here.</p>`;
@@ -227,6 +264,8 @@
             </table></div>`;
     }
 
+    // One click handler for every button in the list (event delegation):
+    // reads the row's id and the button's data-act and does that action.
     async function onListClick(e) {
         const button = e.target.closest("button[data-act]");
         if (!button || button.disabled) return;
@@ -267,6 +306,7 @@
 
     // ---------------------------------------------------------------- details
 
+    // The View button: shows one run's facts, settings and chart.
     async function showRun(id) {
         const run = await getJson(`api/history/runs/${id}`);
         destroyChart();
@@ -356,6 +396,8 @@
         }).join("");
     }
 
+    // The Continue button: closes this window and asks the dashboard to
+    // replay the run up to where it stopped (see LiveSimulation.cs).
     async function continueRun(id) {
         const run = state.runs[id];
         if (!run || !run.canContinue) return;
@@ -364,6 +406,7 @@
         await continueSavedRun(run);
     }
 
+    // The Open button: shows a saved comparison in the Compare panel again.
     async function openCompare(groupId) {
         if (!window.abmCompare) throw new Error("The Compare panel is not loaded.");
         const saved = await getJson(`api/history/compares/${groupId}`);
@@ -371,6 +414,7 @@
         await window.abmCompare.showSaved(saved);
     }
 
+    // Back from the detail view to the list.
     function hideDetail() {
         destroyChart();
         el.detail.hidden = true;
@@ -378,12 +422,14 @@
         el.listCard.hidden = false;
     }
 
+    // Chart.js charts must be destroyed before their canvas is reused.
     function destroyChart() {
         if (state.chart) { state.chart.destroy(); state.chart = null; }
     }
 
     // ------------------------------------------------------------------ errors
 
+    // Shows a message in the red error box.
     function showError(message) {
         el.error.textContent = message;
         el.error.hidden = false;
@@ -394,6 +440,7 @@
         el.error.textContent = "";
     }
 
+    // Runs once the page's HTML is ready.
     function init() {
         build();
         addButton();

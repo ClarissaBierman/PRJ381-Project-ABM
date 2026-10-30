@@ -1,3 +1,18 @@
+// =============================================================================
+// SimulationRepositoryTests.cs  (ABM.Persistence.Tests)
+//
+// Integration tests for the SQLite repository and the exporters. Each test
+// gets its own throw-away database file in the temp folder (made in the
+// constructor, deleted in Dispose), so tests never affect each other or your
+// real Past runs.
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using System.Text.Json.Nodes;
 using ABM.Persistence;
 using ABM.Persistence.Export;
@@ -7,6 +22,7 @@ using Xunit;
 
 namespace ABM.Persistence.Tests;
 
+/// <summary>Tests that runs, ticks, agents, batches and exports save and load correctly.</summary>
 public class SimulationRepositoryTests : IDisposable
 {
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"abm-test-{Guid.NewGuid():N}.db");

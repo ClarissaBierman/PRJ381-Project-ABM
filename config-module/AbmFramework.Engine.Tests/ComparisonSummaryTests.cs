@@ -1,8 +1,22 @@
+// =============================================================================
+// ComparisonSummaryTests.cs  (AbmFramework.Engine.Tests)
+//
+// Unit tests for ComparisonSummary: the averages, spread (standard deviation),
+// chart series and columns shown in the Compare panel.
+//
+// How to run every test: in Visual Studio open Test > Test Explorer and click
+// "Run All Tests", or run "dotnet test" in the solution folder.
+// Tests use xUnit: [Fact] is one test, [Theory] + [InlineData] runs the same
+// test once per data row. Most tests follow Arrange (set up), Act (do the
+// thing), Assert (check the result).
+// =============================================================================
+
 using AbmFramework.Config;
 using Xunit;
 
 namespace AbmFramework.Engine.Tests;
 
+/// <summary>Tests for the Compare panel's summary maths.</summary>
 public class ComparisonSummaryTests
 {
     private static TickStatistics Sir(int tick, int infected) =>

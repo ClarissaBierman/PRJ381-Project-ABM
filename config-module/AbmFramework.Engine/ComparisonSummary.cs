@@ -1,41 +1,69 @@
+// =============================================================================
+// ComparisonSummary.cs  (AbmFramework.Engine)
+//
+// Turns a Monte Carlo batch into everything the Compare panel shows:
+//   - Columns: which numbers to show for this model (ComparisonColumns.For).
+//   - Rows:    one row per run with its seed and final values.
+//   - Stats:   average, lowest, highest and spread (standard deviation) per column.
+//   - Series:  the average over time with a lowest-to-highest band, for the chart.
+//
+// It has no web code in it on purpose, so it can be unit tested on its own
+// (see ComparisonSummaryTests). The Dashboard's ComparisonService calls Build
+// and sends the result to the browser as JSON.
+//
+// ADD A MODEL: add a case to ComparisonColumns.For with your model's columns.
+// =============================================================================
+
 using AbmFramework.Config;
 
 namespace AbmFramework.Engine;
 
-// One column of the Compare table: a single number read from a replicate
-// (its final value, e.g. "Final infected") and, where it makes sense, how to
-// read the same number at every tick so it can be charted over time.
+/// <summary>
+/// One column of the Compare table: a single number read from a run (its
+/// final value, e.g. "Final infected") and, where it makes sense, how to read
+/// the same number at every tick so it can be charted over time.
+/// </summary>
 public sealed class ComparisonColumn
 {
+    /// <summary>Short id used in code and JSON, for example "PeakInfected".</summary>
     public required string Key { get; init; }
 
+    /// <summary>Column heading shown to the user, for example "Peak infected".</summary>
     public required string Label { get; init; }
 
-    // Name used when the value is drawn over time ("Infected" rather than
-    // "Final infected"). Falls back to Label.
+    /// <summary>
+    /// Name used when the value is drawn over time ("Infected" rather than
+    /// "Final infected"). Falls back to Label.
+    /// </summary>
     public string? SeriesLabel { get; init; }
 
-    // "%" or "" - shown after the value in the UI.
+    /// <summary>"%" or "", shown after the value in the UI.</summary>
     public string Unit { get; init; } = "";
 
     // Value at one tick. Null for columns that only exist for a whole run
     // (e.g. peak infected), which therefore get no line on the chart.
     internal Func<TickStatistics, double>? AtTick { get; init; }
 
-    // Value for a whole replicate. Defaults to the value at the last tick.
+    // Value for a whole run. Defaults to the value at the last tick.
     internal Func<IReadOnlyList<TickStatistics>, double>? ForRun { get; init; }
 
+    /// <summary>True if this column can be drawn as a line over time on the chart.</summary>
     public bool HasSeries => AtTick is not null;
 
+    // The single number this column shows for one run.
     internal double FinalValue(IReadOnlyList<TickStatistics> history) =>
         ForRun is not null ? ForRun(history) : AtTick!(history[^1]);
 }
 
+/// <summary>Which columns the Compare panel shows for each model.</summary>
 public static class ComparisonColumns
 {
-    // The columns that make sense for each model: the "final values" the
-    // spec asks for (final infected for SIR, % happy for Schelling, food
-    // collected for Ants, sheep and wolves left for Wolf-Sheep, ...).
+    /// <summary>
+    /// The columns that make sense for each model: the "final values" the
+    /// spec asks for (final infected for SIR, % happy for Schelling, food
+    /// collected for Ants, sheep and wolves left for Wolf-Sheep, ...).
+    /// ADD A MODEL: add a case here, or the Compare panel throws for it.
+    /// </summary>
     public static IReadOnlyList<ComparisonColumn> For(ModelType model) => model switch
     {
         ModelType.SIR => new[]
@@ -81,78 +109,112 @@ public static class ComparisonColumns
         _ => throw new ArgumentOutOfRangeException(nameof(model), model, "Unknown model.")
     };
 
+    // Shortcut for the common case: a column that has a value at every tick.
     private static ComparisonColumn Col(
         string key, string label, Func<TickStatistics, double> atTick, string unit = "", string? seriesLabel = null) =>
         new() { Key = key, Label = label, SeriesLabel = seriesLabel, Unit = unit, AtTick = atTick };
 
+    // Reads a named metric, or 0 if this tick didn't report it.
     private static double Metric(TickStatistics stats, string key) =>
         stats.Metrics.TryGetValue(key, out var value) ? value : 0.0;
 }
 
-// One replicate's row in the results table.
+/// <summary>One run's row in the results table.</summary>
 public sealed class ComparisonRow
 {
-    // 1-based, as shown to the user ("Run 7 of 20").
+    /// <summary>Run number, starting at 1 as shown to the user ("Run 7 of 20").</summary>
     public required int Run { get; init; }
 
+    /// <summary>The seed this run used, so it can be replayed exactly.</summary>
     public required int Seed { get; init; }
 
-    // One value per column, in the same order as ComparisonSummary.Columns.
+    /// <summary>One value per column, in the same order as ComparisonSummary.Columns.</summary>
     public required double[] Values { get; init; }
 }
 
-// Average, lowest, highest and spread across all replicates, for one column.
+/// <summary>Average, lowest, highest and spread across all runs, for one column.</summary>
 public sealed class ComparisonColumnStats
 {
+    /// <summary>The column this belongs to (matches ComparisonColumn.Key).</summary>
     public required string Key { get; init; }
 
+    /// <summary>Average over all runs.</summary>
     public required double Mean { get; init; }
 
+    /// <summary>Lowest value of any run.</summary>
     public required double Min { get; init; }
 
+    /// <summary>Highest value of any run.</summary>
     public required double Max { get; init; }
 
-    // Sample standard deviation (n - 1), the usual choice when the runs
-    // are a sample of all the runs the model could produce.
+    /// <summary>
+    /// Sample standard deviation (divides by n - 1), the usual choice when the
+    /// runs are a sample of all the runs the model could produce. Shown as "±".
+    /// </summary>
     public required double StdDev { get; init; }
 }
 
-// The average over time with the lowest and highest as a band around it.
+/// <summary>
+/// One chart line: the average over time, with the lowest and highest run as
+/// a shaded band around it. All arrays have the same length (one entry per point).
+/// </summary>
 public sealed class ComparisonSeries
 {
+    /// <summary>The column this line is for.</summary>
     public required string Key { get; init; }
 
+    /// <summary>The tick number of each point.</summary>
     public required int[] Ticks { get; init; }
 
+    /// <summary>Average over all runs at each point.</summary>
     public required double[] Mean { get; init; }
 
+    /// <summary>Lowest run at each point (bottom of the band).</summary>
     public required double[] Min { get; init; }
 
+    /// <summary>Highest run at each point (top of the band).</summary>
     public required double[] Max { get; init; }
 }
 
+/// <summary>Everything the Compare panel shows for one setting (A or B).</summary>
 public sealed class ComparisonSummary
 {
+    /// <summary>The model's name, for example "SIR".</summary>
     public required string Model { get; init; }
 
+    /// <summary>How many runs were done.</summary>
     public required int RunCount { get; init; }
 
+    /// <summary>The number of ticks in the longest run.</summary>
     public required int TickLimit { get; init; }
 
-    // The seed all the per-run seeds were derived from; typing it back into
-    // the seed box reproduces the whole comparison.
+    /// <summary>
+    /// The seed all the per-run seeds were derived from. Typing it back into
+    /// the seed box reproduces the whole comparison.
+    /// </summary>
     public required int BaseSeed { get; init; }
 
+    /// <summary>The columns shown for this model.</summary>
     public required IReadOnlyList<ComparisonColumn> Columns { get; init; }
 
+    /// <summary>One row per run.</summary>
     public required IReadOnlyList<ComparisonRow> Rows { get; init; }
 
+    /// <summary>Average, lowest, highest and spread for each column.</summary>
     public required IReadOnlyList<ComparisonColumnStats> Stats { get; init; }
 
+    /// <summary>Chart lines, only for columns that have a value at every tick.</summary>
     public required IReadOnlyList<ComparisonSeries> Series { get; init; }
 
-    // Builds the whole summary from the replicates a MonteCarloRunner
-    // produced. Kept free of any web code so it can be unit tested.
+    /// <summary>
+    /// Builds the whole summary from the runs a MonteCarloRunner produced.
+    /// Kept free of any web code so it can be unit tested.
+    /// </summary>
+    /// <param name="model">Which model was run (decides the columns).</param>
+    /// <param name="baseSeed">The base seed of the batch.</param>
+    /// <param name="results">The runs. Must contain at least one.</param>
+    /// <param name="maxSeriesPoints">Roughly how many points each chart line may have.</param>
+    /// <exception cref="ArgumentException">If results is empty.</exception>
     public static ComparisonSummary Build(
         ModelType model,
         int baseSeed,
@@ -195,6 +257,7 @@ public sealed class ComparisonSummary
         };
     }
 
+    /// <summary>Works out the average, lowest, highest and standard deviation of a list of numbers.</summary>
     public static ComparisonColumnStats Describe(string key, IReadOnlyList<double> values)
     {
         double mean = values.Average();
@@ -214,7 +277,7 @@ public sealed class ComparisonSummary
         };
     }
 
-    // Mean/min/max across replicates at each tick. Replicates that stopped
+    // Mean/min/max across runs at each tick. Runs that stopped
     // early are held at their last value so every tick compares the same
     // number of runs. Long runs are thinned to about maxPoints so the page
     // is not sent (and does not draw) thousands of points per line.
