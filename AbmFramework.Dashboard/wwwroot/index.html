@@ -845,12 +845,26 @@
     </main>
     <div id="tipBox" class="tip-box" role="tooltip" hidden></div>
 
-    <!-- Libraries from a CDN (needs internet the first time), then our own
-         scripts. grid.js must load before the main script below, which uses it.
-         The ?v=... numbers make browsers fetch a fresh copy after a change:
-         bump the number when you edit that file. -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
+    <!-- OUTSIDE LIBRARIES
+         These two aren't in our project. The browser downloads them from
+         jsDelivr (a free CDN), so the page needs internet the first time.
+           Chart.js  = the line chart
+           SignalR   = the live connection to the server
+         The number after the @ is the exact version. It's fixed on purpose,
+         so the page always loads the version we built and tested with.
+         Don't change it to @latest, or a new release could break the page
+         without anyone touching the code.
+
+         To update one: find the newest version on npmjs.com (search
+         "chart.js" or "@microsoft/signalr"), change the number below, then
+         test the chart, Setup, Run, Compare and Past runs. Check the
+         browser console (F12) for errors.
+
+         Then our own scripts. grid.js must load before the main script
+         below, which uses it. The ?v=... numbers make browsers fetch a fresh
+         copy after a change: bump the number when you edit that file. -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@10.0.11/dist/browser/signalr.min.js"></script>
     <script src="js/grid.js?v=4"></script>
     <script src="js/compare.js?v=5"></script>
     <script src="js/history.js?v=3"></script>

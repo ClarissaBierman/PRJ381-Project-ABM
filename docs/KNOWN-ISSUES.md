@@ -4,8 +4,8 @@ Things we know about but didn't get to, roughly from most to least useful to fix
 
 ## Worth fixing
 
-**Chart.js and SignalR are loaded from a CDN without a fixed version.**
-`index.html` loads `chart.js@4` and `@microsoft/signalr@latest`. If a new major version comes out with breaking changes, the dashboard could break without anyone touching the code, and it needs internet the first time. Fix: pin exact versions (for example `chart.js@4.4.1`), or better, add both with **Add > Client-Side Library** (LibMan) so they're served from `wwwroot/lib`.
+**Chart.js and SignalR come from the internet.**
+`index.html` loads them from jsDelivr (a CDN) at fixed versions (Chart.js 4.6.1, SignalR 10.0.11), so they won't change by themselves. The catch is the page needs internet the first time. If that's a problem (campus Wi-Fi, a demo with no network), add both with **Add > Client-Side Library** (LibMan) in Visual Studio so they're saved in `wwwroot/lib` and served by the app itself. How to update the versions is explained in the comment above the `<script>` lines in `index.html`.
 
 **Changing a database table wipes all saved runs.**
 See [DATABASE.md](DATABASE.md#changing-a-table-careful). Fine for a student project, but write real migrations before anyone relies on the saved data.
